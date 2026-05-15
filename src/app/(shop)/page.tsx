@@ -79,7 +79,9 @@ export default async function HomePage() {
 
       {/* CATEGORÍAS */}
       <section aria-label="Categorías" className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">
-        <CategoryChips />
+        <Suspense fallback={null}>
+          <CategoryChips />
+        </Suspense>
       </section>
 
       {/* MÁS VENDIDOS */}
