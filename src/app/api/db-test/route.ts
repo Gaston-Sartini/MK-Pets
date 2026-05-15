@@ -23,9 +23,10 @@ async function testUrl(label: string, url: string) {
   } catch (e: unknown) {
     await prisma.$disconnect().catch(() => {})
     const msg = e instanceof Error
-      ? e.message.split('\n').slice(0, 3).join(' ').slice(0, 300)
-      : String(e)
-    return { label, ok: false, error: msg }
+      ? `${e.name}: ${e.message}`.slice(0, 800)
+      : String(e).slice(0, 800)
+    const extra = (e as any)?.errorCode ?? (e as any)?.code ?? ''
+    return { label, ok: false, error: msg, code: extra }
   }
 }
 
