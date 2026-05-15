@@ -74,11 +74,11 @@ export function Navbar() {
                 priority
               />
             </div>
-            <div className="hidden sm:block">
+            <div>
               <span className="font-display font-black text-mk-dark text-lg leading-none">
                 MK-<span className="text-mk-orange">pets</span>
               </span>
-              <p className="font-body text-mk-mid text-[10px] leading-none -mt-0.5">
+              <p className="hidden sm:block font-body text-mk-mid text-[10px] leading-none -mt-0.5">
                 Tu mascota, nuestra prioridad
               </p>
             </div>

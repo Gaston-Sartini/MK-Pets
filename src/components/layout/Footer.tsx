@@ -49,6 +49,9 @@ export function Footer() {
                 height={40}
                 className="h-10 w-auto object-contain"
               />
+              <span className="font-display font-black text-xl">
+                MK-<span className="text-mk-orange">pets</span>
+              </span>
             </div>
 
             {/* Brand Guardian: tagline oficial */}
