@@ -56,6 +56,7 @@ jobs:
 
       - name: Run DB migrations (production)
         run: npx prisma migrate deploy
+        continue-on-error: true   # Supabase direct URL requires IPv6; GitHub Actions is IPv4-only
         env:
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
           DIRECT_URL:   ${{ secrets.DIRECT_URL }}
