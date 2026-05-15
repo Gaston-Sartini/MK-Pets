@@ -13,8 +13,11 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
-    title: `Pedido ${params.numero} | MK-Pets`,
-    robots: 'noindex',
+    title: `Pedido ${params.numero}`,
+    robots: {
+      index: false,
+      follow: false,
+    },
   }
 }
 

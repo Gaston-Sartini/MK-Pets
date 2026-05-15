@@ -15,10 +15,57 @@ interface PageProps {
   searchParams: { cat?: string; q?: string; cursor?: string }
 }
 
+const BASE_URL = 'https://mk-pets.com.ar'
+
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const cat = searchParams.cat
+  const q = searchParams.q
+
+  if (q) {
+    // Search results: noindex to avoid duplicate/thin content
+    return {
+      title: `Resultados para "${q}" — Productos para mascotas`,
+      robots: { index: false, follow: true },
+    }
+  }
+
+  if (cat) {
+    // Fetch category name for a richer title
+    const category = await prisma.category.findUnique({
+      where: { slug: cat },
+      select: { name: true, emoji: true },
+    })
+    const catLabel = category
+      ? `${category.emoji ? category.emoji + ' ' : ''}${category.name}`
+      : cat.charAt(0).toUpperCase() + cat.slice(1)
+
+    return {
+      title: `${catLabel} para mascotas en Buenos Aires`,
+      description: `Comprá ${catLabel.toLowerCase()} para tu mascota con envío gratis a CABA. Variedad de productos seleccionados en MK-Pets.`,
+      alternates: {
+        canonical: `${BASE_URL}/productos?cat=${cat}`,
+      },
+      openGraph: {
+        title: `${catLabel} para mascotas en Buenos Aires | MK-Pets`,
+        description: `Comprá ${catLabel.toLowerCase()} para tu mascota con envío gratis a CABA.`,
+        url: `${BASE_URL}/productos?cat=${cat}`,
+      },
+    }
+  }
+
   return {
-    title: cat ? `${cat.charAt(0).toUpperCase() + cat.slice(1)} para mascotas` : 'Todos los productos',
+    title: 'Todos los productos para mascotas',
+    description:
+      'Explorá nuestro catálogo completo de alimentos, snacks, higiene y juguetes para perros y gatos. Envío gratis a CABA.',
+    alternates: {
+      canonical: `${BASE_URL}/productos`,
+    },
+    openGraph: {
+      title: 'Todos los productos para mascotas | MK-Pets',
+      description:
+        'Catálogo completo de productos para mascotas con envío gratis a CABA.',
+      url: `${BASE_URL}/productos`,
+    },
   }
 }
 

@@ -1,10 +1,12 @@
 import { Suspense } from 'react'
+import type { Metadata } from 'next'
 import { Footer } from '@/components/layout/Footer'
 import { HeroBanner } from '@/components/layout/HeroBanner'
 import { ShippingBanner } from '@/components/layout/ShippingBanner'
 import { ProductGrid } from '@/components/catalog/ProductGrid'
 import { ProductCardSkeleton } from '@/components/ui/Skeleton'
 import { CategoryChips } from '@/components/catalog/CategoryChips'
+import { JsonLd } from '@/components/seo/JsonLd'
 import {
   getFeaturedProducts,
   getProductsByCategory,
@@ -12,6 +14,40 @@ import {
 
 // Cache home page for 5 minutes — balances freshness vs. DB load
 export const revalidate = 300
+
+const BASE_URL = 'https://mk-pets.com.ar'
+
+export const metadata: Metadata = {
+  title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
+  description:
+    'Comprá alimentos para perros y gatos, snacks, productos de higiene y juguetes para mascotas. Envío gratis a CABA. La mejor tienda de mascotas online de Buenos Aires.',
+  alternates: {
+    canonical: BASE_URL,
+  },
+  openGraph: {
+    title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
+    description:
+      'Alimentos, snacks, higiene y juguetes para mascotas. Envío gratis a CABA.',
+    url: BASE_URL,
+  },
+}
+
+const websiteSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'MK-Pets',
+  url: BASE_URL,
+  description:
+    'Marketplace de productos para mascotas en Buenos Aires con envío gratis a CABA.',
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: {
+      '@type': 'EntryPoint',
+      urlTemplate: `${BASE_URL}/productos?q={search_term_string}`,
+    },
+    'query-input': 'required name=search_term_string',
+  },
+}
 
 const SECTIONS = [
   { slug: 'gatos',  label: 'Línea Gatos',  emoji: '🐱' },
@@ -29,6 +65,7 @@ export default async function HomePage() {
 
   return (
     <>
+      <JsonLd data={websiteSchema} />
       <HeroBanner />
 
       {/* CATEGORÍAS */}

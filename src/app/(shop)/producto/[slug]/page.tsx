@@ -5,11 +5,14 @@ import { prisma } from '@/lib/prisma'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { AddToCartButton } from '@/components/catalog/AddToCartButton'
+import { JsonLd } from '@/components/seo/JsonLd'
 import { formatPrice } from '@/lib/utils'
 import type { Metadata } from 'next'
 import type { Product } from '@/types'
 
 interface PageProps { params: { slug: string } }
+
+const BASE_URL = 'https://mk-pets.com.ar'
 
 async function getProduct(slug: string): Promise<Product | null> {
   const p = await prisma.product.findUnique({
@@ -39,13 +42,56 @@ async function getRelated(categoryId: string, excludeId: string): Promise<Produc
   }))
 }
 
+/** Pre-build all published product slugs at build time */
+export async function generateStaticParams() {
+  const products = await prisma.product.findMany({
+    where:  { isActive: true },
+    select: { slug: true },
+  })
+  return products.map(p => ({ slug: p.slug }))
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const p = await getProduct(params.slug)
-  if (!p) return { title: 'Producto no encontrado' }
+  if (!p) notFound()
+
+  const canonicalUrl = `${BASE_URL}/producto/${p.slug}`
+  const description  = p.description
+    ?? `Comprá ${p.name} en MK-Pets con envío gratis a CABA. Productos para mascotas de calidad en Buenos Aires.`
+
+  // Ensure OG image is always an absolute URL
+  const ogImage = p.images[0]
+    ? p.images[0].startsWith('http')
+      ? p.images[0]
+      : `${BASE_URL}${p.images[0]}`
+    : `${BASE_URL}/og-image.png`
+
   return {
     title: p.name,
-    description: p.description ?? `${p.name} — disponible en MK-Pets con envío gratis a CABA.`,
-    openGraph: { images: p.images[0] ? [p.images[0]] : [] },
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      title:       `${p.name} | MK-Pets`,
+      description,
+      url:         canonicalUrl,
+      type:        'website',
+      images: [
+        {
+          url:    ogImage,
+          width:  1200,
+          height: 630,
+          alt:    p.name,
+        },
+      ],
+    },
+    twitter: {
+      card:        'summary_large_image',
+      title:       `${p.name} | MK-Pets`,
+      description,
+      images:      [ogImage],
+    },
   }
 }
 
@@ -63,8 +109,76 @@ export default async function ProductoPage({ params }: PageProps) {
 
   const mainImage = product.images[0] ?? '/placeholder-product.png'
 
+  // Ensure all image URLs are absolute for JSON-LD
+  const absoluteImages = product.images.map(img =>
+    img.startsWith('http') ? img : `${BASE_URL}${img}`
+  )
+
+  const canonicalUrl = `${BASE_URL}/producto/${product.slug}`
+
+  /** Product structured data */
+  const productSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description:
+      product.description ??
+      `${product.name} — disponible en MK-Pets con envío gratis a CABA.`,
+    image: absoluteImages.length > 0 ? absoluteImages : [`${BASE_URL}/og-image.png`],
+    brand: {
+      '@type': 'Brand',
+      name: 'MK-Pets',
+    },
+    offers: {
+      '@type': 'Offer',
+      url: canonicalUrl,
+      priceCurrency: 'ARS',
+      price: product.basePrice.toFixed(2),
+      availability:
+        product.stock > 0
+          ? 'https://schema.org/InStock'
+          : 'https://schema.org/OutOfStock',
+      seller: {
+        '@type': 'Organization',
+        name: 'MK-Pets',
+        url: BASE_URL,
+      },
+    },
+    ...(product.category && {
+      category: product.category.name,
+    }),
+  }
+
+  /** BreadcrumbList structured data */
+  const breadcrumbSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Inicio',
+        item: BASE_URL,
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: product.category.name,
+        item: `${BASE_URL}/productos?cat=${product.category.slug}`,
+      },
+      {
+        '@type': 'ListItem',
+        position: 3,
+        name: product.name,
+        item: canonicalUrl,
+      },
+    ],
+  }
+
   return (
     <>
+      <JsonLd data={productSchema} />
+      <JsonLd data={breadcrumbSchema} />
       <Navbar />
       <main className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">
 
