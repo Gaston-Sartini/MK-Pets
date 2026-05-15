@@ -19,7 +19,9 @@ export async function GET(request: Request) {
     })
 
     return NextResponse.json({ products, nextCursor })
-  } catch {
-    return NextResponse.json({ error: 'Error al obtener productos' }, { status: 500 })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[/api/productos] ERROR:', msg)
+    return NextResponse.json({ error: 'Error al obtener productos', detail: msg }, { status: 500 })
   }
 }
