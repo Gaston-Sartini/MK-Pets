@@ -44,11 +44,16 @@ async function getRelated(categoryId: string, excludeId: string): Promise<Produc
 
 /** Pre-build all published product slugs at build time */
 export async function generateStaticParams() {
-  const products = await prisma.product.findMany({
-    where:  { isActive: true },
-    select: { slug: true },
-  })
-  return products.map(p => ({ slug: p.slug }))
+  try {
+    const products = await prisma.product.findMany({
+      where:  { isActive: true },
+      select: { slug: true },
+    })
+    return products.map(p => ({ slug: p.slug }))
+  } catch {
+    // DB unavailable at build time — pages are generated on-demand via ISR
+    return []
+  }
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

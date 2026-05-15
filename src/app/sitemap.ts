@@ -21,18 +21,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]
 
   // Dynamic product routes — only published (isActive) products
-  const products = await prisma.product.findMany({
-    where:  { isActive: true },
-    select: { slug: true, updatedAt: true },
-    orderBy: { updatedAt: 'desc' },
-  })
-
-  const productRoutes: MetadataRoute.Sitemap = products.map(product => ({
-    url:             `${BASE_URL}/producto/${product.slug}`,
-    lastModified:    product.updatedAt,
-    changeFrequency: 'weekly',
-    priority:        0.8,
-  }))
+  let productRoutes: MetadataRoute.Sitemap = []
+  try {
+    const products = await prisma.product.findMany({
+      where:   { isActive: true },
+      select:  { slug: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+    })
+    productRoutes = products.map(product => ({
+      url:             `${BASE_URL}/producto/${product.slug}`,
+      lastModified:    product.updatedAt,
+      changeFrequency: 'weekly' as const,
+      priority:        0.8,
+    }))
+  } catch {
+    // DB unavailable — return sitemap without product routes
+  }
 
   return [...staticRoutes, ...productRoutes]
 }
