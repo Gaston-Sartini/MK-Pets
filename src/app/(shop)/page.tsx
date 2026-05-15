@@ -68,8 +68,10 @@ export default async function HomePage() {
     const [featuredData, ...sectionData] = results
     featured = featuredData
     sections = sectionData
-  } catch {
-    // DB unavailable at build time — ISR will serve fresh data after deployment
+  } catch (err) {
+    // Log real error — antes lo tragábamos en silencio y el sitio
+    // se quedaba con productos vacíos sin pista del fallo en logs.
+    console.error('[home] Error cargando productos:', err)
   }
 
   return (

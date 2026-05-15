@@ -90,8 +90,8 @@ export default async function ProductosPage({ searchParams }: PageProps) {
     ])
     products = productsResult.products
     categories = categoriesResult
-  } catch {
-    // DB unavailable — show empty state
+  } catch (err) {
+    console.error('[productos] Error cargando catálogo:', err)
   }
 
   const activeCategory = categories.find(c => c.slug === cat)
