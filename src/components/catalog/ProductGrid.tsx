@@ -26,7 +26,7 @@ function ProductCard({ product }: { product: Product }) {
     addItem({
       productId:    product.id,
       name:         product.name,
-      image:        product.images[0] ?? '/placeholder-product.png',
+      image:        product.images[0] ?? '',
       slug:         product.slug,
       variantLabel: selected?.label,
       unitPrice:    displayPrice,
@@ -38,14 +38,18 @@ function ProductCard({ product }: { product: Product }) {
   return (
     <div className="product-card group">
       {/* IMAGEN */}
-      <Link href={`/producto/${product.slug}`} className="block relative aspect-square bg-gray-50">
-        <Image
-          src={product.images[0] ?? '/placeholder-product.png'}
-          alt={product.name}
-          fill
-          className="object-contain p-3 transition-transform duration-300 group-hover:scale-105"
-          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-        />
+      <Link href={`/producto/${product.slug}`} className="block relative aspect-square bg-mk-light">
+        {product.images[0] ? (
+          <Image
+            src={product.images[0]}
+            alt={product.name}
+            fill
+            className="object-contain p-3 transition-transform duration-300 group-hover:scale-105"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-5xl opacity-30">🐾</div>
+        )}
         {product.badge && (
           <span className={`absolute top-2 left-2 badge-${product.badge}`}>
             {BADGE_LABEL[product.badge]}

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 const CATEGORIES = [
   { label: 'Gatos',    slug: 'gatos',    emoji: '🐱' },
@@ -41,12 +42,13 @@ export function Footer() {
           {/* BRAND */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-10 h-10 bg-mk-orange rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-lg" aria-hidden="true">🐾</span>
-              </div>
-              <span className="font-display font-black text-xl">
-                MK-<span className="text-mk-orange">pets</span>
-              </span>
+              <Image
+                src="/logo.png"
+                alt="MK-Pets"
+                width={120}
+                height={40}
+                className="h-10 w-auto object-contain"
+              />
             </div>
 
             {/* Brand Guardian: tagline oficial */}
