@@ -64,12 +64,15 @@ export function Navbar() {
             className="flex-shrink-0 flex items-center gap-2 group"
             aria-label="MK-Pets — Inicio"
           >
-            <div className="relative w-10 h-10">
-              {/* Reemplazar con <Image> cuando el SVG esté listo */}
-              <div className="w-10 h-10 bg-mk-orange rounded-full flex items-center justify-center
-                              group-hover:scale-105 transition-transform duration-200">
-                <span className="text-white font-display font-black text-xs">🐾</span>
-              </div>
+            <div className="relative h-10 w-auto">
+              <Image
+                src="/logo.png"
+                alt="MK-Pets"
+                width={120}
+                height={40}
+                className="h-10 w-auto object-contain group-hover:scale-105 transition-transform duration-200"
+                priority
+              />
             </div>
             <div className="hidden sm:block">
               <span className="font-display font-black text-mk-dark text-lg leading-none">

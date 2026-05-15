@@ -78,7 +78,7 @@ export function HeroBanner() {
           <div className="flex-1 flex justify-center order-1 md:order-2">
             <div className="relative w-full max-w-sm md:max-w-md lg:max-w-lg">
               <Image
-                src="/assets/hero-main.webp"
+                src="/assets/hero-main.png"
                 alt="Gatos, perros y productos MK-Pets — alimentos, snacks y más"
                 width={600}
                 height={450}
