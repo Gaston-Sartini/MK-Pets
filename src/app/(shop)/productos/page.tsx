@@ -34,7 +34,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     const category = await prisma.category.findUnique({
       where: { slug: cat },
       select: { name: true, emoji: true },
-    })
+    }).catch(() => null)
     const catLabel = category
       ? `${category.emoji ? category.emoji + ' ' : ''}${category.name}`
       : cat.charAt(0).toUpperCase() + cat.slice(1)

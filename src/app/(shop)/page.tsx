@@ -57,11 +57,20 @@ const SECTIONS = [
 ]
 
 export default async function HomePage() {
-  // Promise.all — queries en paralelo, no secuenciales
-  const [featured, ...sections] = await Promise.all([
-    getFeaturedProducts(),
-    ...SECTIONS.map(s => getProductsByCategory(s.slug)),
-  ])
+  let featured: Awaited<ReturnType<typeof getFeaturedProducts>> = []
+  let sections: Awaited<ReturnType<typeof getProductsByCategory>>[] = SECTIONS.map(() => [])
+
+  try {
+    const results = await Promise.all([
+      getFeaturedProducts(),
+      ...SECTIONS.map(s => getProductsByCategory(s.slug)),
+    ])
+    const [featuredData, ...sectionData] = results
+    featured = featuredData
+    sections = sectionData
+  } catch {
+    // DB unavailable at build time — ISR will serve fresh data after deployment
+  }
 
   return (
     <>
