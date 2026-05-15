@@ -1,4 +1,4 @@
-import type { NextConfig } from 'next'
+/** @type {import('next').NextConfig} */
 
 const securityHeaders = [
   { key: 'X-DNS-Prefetch-Control',  value: 'on' },
@@ -28,16 +28,13 @@ const securityHeaders = [
   },
 ]
 
-const config: NextConfig = {
-  // Expose only the public key to the client bundle — never the access token
+const config = {
   env: {
     NEXT_PUBLIC_MP_PUBLIC_KEY: process.env.NEXT_PUBLIC_MP_PUBLIC_KEY ?? '',
   },
 
   images: {
-    // Modern formats: avif first (30% smaller than webp), webp fallback
     formats: ['image/avif', 'image/webp'],
-    // Breakpoints aligned to Tailwind sm/md/lg/xl + mobile
     deviceSizes: [390, 640, 768, 1024, 1280, 1536],
     imageSizes: [64, 128, 256, 384],
     remotePatterns: [
@@ -46,14 +43,10 @@ const config: NextConfig = {
     ],
   },
 
-  // Compress responses (gzip/brotli)
   compress: true,
-
-  // Reduce JS bundle: remove source maps in production
   productionBrowserSourceMaps: false,
 
   experimental: {
-    // Optimize package imports — avoids loading entire lucide-react/zustand bundles
     optimizePackageImports: ['lucide-react', 'zustand'],
   },
 
