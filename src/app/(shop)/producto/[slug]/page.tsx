@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import { prisma } from '@/lib/prisma'
+import { getProductBySlug, getRelatedProducts, getActiveProductSlugs } from '@/lib/queries'
 import { Navbar } from '@/components/layout/Navbar'
 import { Footer } from '@/components/layout/Footer'
 import { AddToCartButton } from '@/components/catalog/AddToCartButton'
@@ -14,41 +14,10 @@ interface PageProps { params: { slug: string } }
 
 const BASE_URL = 'https://mk-pets.com.ar'
 
-async function getProduct(slug: string): Promise<Product | null> {
-  const p = await prisma.product.findUnique({
-    where: { slug, isActive: true },
-    include: { category: true, variants: true },
-  })
-  if (!p) return null
-  return {
-    ...p,
-    basePrice: Number(p.basePrice),
-    badge: p.badge as Product['badge'],
-    variants: p.variants.map(v => ({ ...v, price: Number(v.price) })),
-  }
-}
-
-async function getRelated(categoryId: string, excludeId: string): Promise<Product[]> {
-  const products = await prisma.product.findMany({
-    where: { categoryId, isActive: true, id: { not: excludeId } },
-    include: { category: true, variants: true },
-    take: 4,
-  })
-  return products.map(p => ({
-    ...p,
-    basePrice: Number(p.basePrice),
-    badge: p.badge as Product['badge'],
-    variants: p.variants.map(v => ({ ...v, price: Number(v.price) })),
-  }))
-}
-
 /** Pre-build all published product slugs at build time */
 export async function generateStaticParams() {
   try {
-    const products = await prisma.product.findMany({
-      where:  { isActive: true },
-      select: { slug: true },
-    })
+    const products = await getActiveProductSlugs()
     return products.map(p => ({ slug: p.slug }))
   } catch {
     // DB unavailable at build time — pages are generated on-demand via ISR
@@ -57,7 +26,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const p = await getProduct(params.slug)
+  const p = await getProductBySlug(params.slug)
   if (!p) notFound()
 
   const canonicalUrl = `${BASE_URL}/producto/${p.slug}`
@@ -105,10 +74,10 @@ const BADGE_LABEL: Record<string, string> = {
 }
 
 export default async function ProductoPage({ params }: PageProps) {
-  const [product, related] = await Promise.all([
-    getProduct(params.slug),
-    getProduct(params.slug).then(p => p ? getRelated(p.category.id, p.id) : []),
-  ])
+  const product = await getProductBySlug(params.slug)
+  const related: Product[] = product
+    ? await getRelatedProducts(product.category.id, product.id)
+    : []
 
   if (!product) notFound()
 

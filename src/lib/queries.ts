@@ -1,45 +1,40 @@
-/**
- * MK-Pets — Query helpers optimizados
- * DB Optimizer: select explícito (nunca SELECT *), includes mínimos,
- * sin N+1, con paginación por cursor para catálogos grandes.
- */
-
-import { prisma } from './prisma'
+import { supabase } from './supabase'
 import type { Product } from '@/types'
 
-// Campos mínimos para la ProductCard (evita traer description, etc.)
-const PRODUCT_CARD_SELECT = {
-  id:         true,
-  name:       true,
-  slug:       true,
-  images:     true,
-  basePrice:  true,
-  badge:      true,
-  isFeatured: true,
-  stock:      true,
-  category: { select: { id: true, name: true, slug: true, emoji: true } },
-  variants: { select: { id: true, label: true, price: true, stock: true } },
-} as const
+// Supabase select for product cards (no description)
+const PRODUCT_CARD_SELECT =
+  'id, name, slug, images, basePrice, badge, isFeatured, stock, ' +
+  'category:Category ( id, name, slug, emoji ), ' +
+  'variants:ProductVariant ( id, label, price, stock )'
 
-// Convierte Decimal de Prisma a number (necesario para serialización JSON)
+// Supabase select for product detail page (adds description)
+const PRODUCT_DETAIL_SELECT = PRODUCT_CARD_SELECT + ', description'
+
 function serializeProduct(p: any): Product {
   return {
     ...p,
-    basePrice: Number(p.basePrice),
-    badge: p.badge as Product['badge'],
-    variants: p.variants.map((v: any) => ({ ...v, price: Number(v.price) })),
+    description: p.description ?? null,
+    basePrice: parseFloat(p.basePrice),
+    badge: (p.badge as Product['badge']) ?? null,
+    variants: (p.variants ?? []).map((v: any) => ({
+      ...v,
+      price: parseFloat(v.price),
+    })),
   }
 }
 
 /** Productos destacados para la home — máximo 8 */
 export async function getFeaturedProducts(): Promise<Product[]> {
-  const products = await prisma.product.findMany({
-    where:   { isFeatured: true, isActive: true },
-    select:  PRODUCT_CARD_SELECT,
-    orderBy: { createdAt: 'desc' },
-    take:    8,
-  })
-  return products.map(serializeProduct)
+  const { data, error } = await supabase
+    .from('Product')
+    .select(PRODUCT_CARD_SELECT)
+    .eq('isFeatured', true)
+    .eq('isActive', true)
+    .order('createdAt', { ascending: false })
+    .limit(8)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(serializeProduct)
 }
 
 /** Productos de una categoría — máximo configurable */
@@ -47,39 +42,86 @@ export async function getProductsByCategory(
   categorySlug: string,
   take = 4
 ): Promise<Product[]> {
-  const products = await prisma.product.findMany({
-    where:   { category: { slug: categorySlug }, isActive: true },
-    select:  PRODUCT_CARD_SELECT,
-    orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
-    take,
-  })
-  return products.map(serializeProduct)
+  const { data: cat } = await supabase
+    .from('Category')
+    .select('id')
+    .eq('slug', categorySlug)
+    .single()
+
+  if (!cat) return []
+
+  const { data, error } = await supabase
+    .from('Product')
+    .select(PRODUCT_CARD_SELECT)
+    .eq('categoryId', cat.id)
+    .eq('isActive', true)
+    .order('isFeatured', { ascending: false })
+    .order('createdAt', { ascending: false })
+    .limit(take)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(serializeProduct)
 }
 
 /**
  * Catálogo con filtro y paginación por cursor.
- * Cursor-based >> offset-based para catálogos grandes.
  */
 export async function getProducts(opts: {
   categorySlug?: string
   search?:       string
-  cursor?:       string   // último id de la página anterior
+  cursor?:       string
   take?:         number
 }): Promise<{ products: Product[]; nextCursor: string | null }> {
   const { categorySlug, search, cursor, take = 20 } = opts
 
-  const products = await prisma.product.findMany({
-    where: {
-      isActive: true,
-      ...(categorySlug && { category: { slug: categorySlug } }),
-      ...(search && { name: { contains: search, mode: 'insensitive' } }),
-    },
-    select:  PRODUCT_CARD_SELECT,
-    orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
-    take:    take + 1,   // pedir uno más para saber si hay siguiente página
-    ...(cursor && { cursor: { id: cursor }, skip: 1 }),
-  })
+  let categoryId: string | undefined
+  if (categorySlug) {
+    const { data: cat } = await supabase
+      .from('Category')
+      .select('id')
+      .eq('slug', categorySlug)
+      .single()
+    if (!cat) return { products: [], nextCursor: null }
+    categoryId = cat.id
+  }
 
+  // eslint-disable-next-line prefer-const
+  let query = supabase
+    .from('Product')
+    .select(PRODUCT_CARD_SELECT)
+    .eq('isActive', true)
+    .order('isFeatured', { ascending: false })
+    .order('createdAt', { ascending: false })
+    .limit(take + 1)
+
+  if (categoryId) query = query.eq('categoryId', categoryId)
+  if (search)     query = query.ilike('name', `%${search}%`)
+
+  if (cursor) {
+    const { data: pivot } = await supabase
+      .from('Product')
+      .select('isFeatured, createdAt')
+      .eq('id', cursor)
+      .single()
+
+    if (pivot) {
+      const ts = new Date(pivot.createdAt).toISOString()
+      if (pivot.isFeatured) {
+        // After a featured item: take non-featured OR featured with earlier createdAt
+        query = query.or(
+          `isFeatured.eq.false,and(isFeatured.eq.true,createdAt.lt.${ts})`
+        )
+      } else {
+        // After a non-featured item: take non-featured with earlier createdAt
+        query = query.eq('isFeatured', false).lt('createdAt', ts)
+      }
+    }
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+
+  const products    = (data ?? []) as any[]
   const hasNextPage = products.length > take
   const page        = hasNextPage ? products.slice(0, take) : products
   const nextCursor  = hasNextPage ? page[page.length - 1].id : null
@@ -87,17 +129,50 @@ export async function getProducts(opts: {
   return { products: page.map(serializeProduct), nextCursor }
 }
 
+/** Todas las categorías ordenadas para la barra de navegación */
+export async function getCategories() {
+  const { data, error } = await supabase
+    .from('Category')
+    .select('id, name, slug, emoji, order')
+    .order('order', { ascending: true })
+
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
+/** Una categoría por slug — para metadata de página */
+export async function getCategoryBySlug(slug: string) {
+  const { data } = await supabase
+    .from('Category')
+    .select('id, name, slug, emoji')
+    .eq('slug', slug)
+    .single()
+  return data ?? null
+}
+
+/** Slugs de todos los productos activos — para generateStaticParams / sitemap */
+export async function getActiveProductSlugs() {
+  const { data, error } = await supabase
+    .from('Product')
+    .select('slug, updatedAt')
+    .eq('isActive', true)
+    .order('updatedAt', { ascending: false })
+
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
 /** Producto por slug con todos los datos para la página de detalle */
 export async function getProductBySlug(slug: string): Promise<Product | null> {
-  const p = await prisma.product.findUnique({
-    where:  { slug, isActive: true },
-    select: {
-      ...PRODUCT_CARD_SELECT,
-      description: true,
-    },
-  })
-  if (!p) return null
-  return serializeProduct(p)
+  const { data, error } = await supabase
+    .from('Product')
+    .select(PRODUCT_DETAIL_SELECT)
+    .eq('slug', slug)
+    .eq('isActive', true)
+    .single()
+
+  if (error || !data) return null
+  return serializeProduct(data)
 }
 
 /** Productos relacionados — misma categoría, excluye el actual */
@@ -106,59 +181,46 @@ export async function getRelatedProducts(
   excludeId:  string,
   take = 4
 ): Promise<Product[]> {
-  const products = await prisma.product.findMany({
-    where:   { categoryId, isActive: true, id: { not: excludeId } },
-    select:  PRODUCT_CARD_SELECT,
-    take,
-  })
-  return products.map(serializeProduct)
+  const { data, error } = await supabase
+    .from('Product')
+    .select(PRODUCT_CARD_SELECT)
+    .eq('categoryId', categoryId)
+    .eq('isActive', true)
+    .neq('id', excludeId)
+    .limit(take)
+
+  if (error) throw new Error(error.message)
+  return (data ?? []).map(serializeProduct)
 }
 
 /**
  * Pedido por número con todos sus ítems.
- * Una sola query — no hay N+1.
  */
 export async function getOrderByNumber(orderNumber: string) {
-  const order = await prisma.order.findUnique({
-    where:  { orderNumber },
-    select: {
-      id:            true,
-      orderNumber:   true,
-      status:        true,
-      paymentMethod: true,
-      paymentStatus: true,
-      customerName:  true,
-      address:       true,
-      phone:         true,
-      notes:         true,
-      total:         true,
-      canModifyUntil:true,
-      createdAt:     true,
-      items: {
-        select: {
-          id:          true,
-          quantity:    true,
-          unitPrice:   true,
-          variantLabel:true,
-          product: {
-            select: { id: true, name: true, images: true, slug: true },
-          },
-        },
-      },
-    },
-  })
+  const { data: order, error } = await supabase
+    .from('Order')
+    .select(`
+      id, orderNumber, status, paymentMethod, paymentStatus,
+      customerName, address, phone, notes, total, canModifyUntil, createdAt,
+      items:OrderItem (
+        id, quantity, unitPrice, variantLabel,
+        product:Product ( id, name, images, slug )
+      )
+    `)
+    .eq('orderNumber', orderNumber)
+    .single()
 
-  if (!order) return null
+  if (error || !order) return null
 
   return {
     ...order,
-    total:          Number(order.total),
-    canModifyUntil: order.canModifyUntil.toISOString(),
-    createdAt:      order.createdAt.toISOString(),
-    items: order.items.map(i => ({
+    total:          parseFloat(order.total as string),
+    canModifyUntil: order.canModifyUntil as string,
+    createdAt:      order.createdAt as string,
+    items: (order.items as any[]).map(i => ({
       id:           i.id,
       quantity:     i.quantity,
-      unitPrice:    Number(i.unitPrice),
+      unitPrice:    parseFloat(i.unitPrice),
       variantLabel: i.variantLabel,
       product: {
         id:     i.product.id,

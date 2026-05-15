@@ -1,10 +1,9 @@
 import { Suspense } from 'react'
-import { prisma } from '@/lib/prisma'
 import { Footer } from '@/components/layout/Footer'
 import { ProductGrid } from '@/components/catalog/ProductGrid'
 import { CategoryChips } from '@/components/catalog/CategoryChips'
 import { ProductCardSkeleton } from '@/components/ui/Skeleton'
-import { getProducts } from '@/lib/queries'
+import { getProducts, getCategories, getCategoryBySlug } from '@/lib/queries'
 import type { Metadata } from 'next'
 import type { Product } from '@/types'
 
@@ -32,10 +31,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
 
   if (cat) {
     // Fetch category name for a richer title
-    const category = await prisma.category.findUnique({
-      where: { slug: cat },
-      select: { name: true, emoji: true },
-    }).catch(() => null)
+    const category = await getCategoryBySlug(cat).catch(() => null)
     const catLabel = category
       ? `${category.emoji ? category.emoji + ' ' : ''}${category.name}`
       : cat.charAt(0).toUpperCase() + cat.slice(1)
@@ -68,13 +64,6 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
       url: `${BASE_URL}/productos`,
     },
   }
-}
-
-async function getCategories() {
-  return prisma.category.findMany({
-    select: { id: true, name: true, slug: true, emoji: true, order: true },
-    orderBy: { order: 'asc' },
-  })
 }
 
 export default async function ProductosPage({ searchParams }: PageProps) {

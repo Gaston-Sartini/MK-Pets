@@ -1,10 +1,9 @@
 import type { MetadataRoute } from 'next'
-import { prisma } from '@/lib/prisma'
+import { getActiveProductSlugs } from '@/lib/queries'
 
 const BASE_URL = 'https://mk-pets.com.ar'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // Static routes
   const staticRoutes: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
@@ -20,17 +19,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ]
 
-  // Dynamic product routes — only published (isActive) products
   let productRoutes: MetadataRoute.Sitemap = []
   try {
-    const products = await prisma.product.findMany({
-      where:   { isActive: true },
-      select:  { slug: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
-    })
-    productRoutes = products.map(product => ({
-      url:             `${BASE_URL}/producto/${product.slug}`,
-      lastModified:    product.updatedAt,
+    const products = await getActiveProductSlugs()
+    productRoutes = products.map(p => ({
+      url:             `${BASE_URL}/producto/${p.slug}`,
+      lastModified:    new Date(p.updatedAt as string),
       changeFrequency: 'weekly' as const,
       priority:        0.8,
     }))
