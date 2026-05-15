@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+
+# Environment — NEVER commit real secrets
+.env
+.env.local
+.env.*.local
+
+# Prisma generated
+prisma/migrations/
+
+# Testing
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/settings.json
+.idea/
+*.swp
+
+# Netlify
+.netlify/
+
+# Logs
+*.log
+npm-debug.log*

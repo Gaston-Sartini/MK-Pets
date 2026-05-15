@@ -1,0 +1,35 @@
+[build]
+  command   = "npm run build"
+  publish   = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_VERSION  = "10"
+
+# Next.js runtime plugin (required for SSR/ISR on Netlify)
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Redirect www → apex
+[[redirects]]
+  from   = "https://www.mk-pets.com.ar/*"
+  to     = "https://mk-pets.com.ar/:splat"
+  status = 301
+  force  = true
+
+# Health check endpoint — used by SRE uptime monitoring
+[[redirects]]
+  from   = "/health"
+  to     = "/api/health"
+  status = 200
+
+[context.production]
+  command = "npm run build"
+
+[context.deploy-preview]
+  command = "npm run build"
+  [context.deploy-preview.environment]
+    NEXT_PUBLIC_BASE_URL = "$DEPLOY_PRIME_URL"
+
+[context.branch-deploy]
+  command = "npm run build"

@@ -1,0 +1,73 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:      # allow manual deploys from GitHub UI
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false    # never cancel an in-flight deploy
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ── Gate: all CI checks must pass ─────────────────────────────────────────
+  ci-gate:
+    name: CI gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # ── Deploy to Netlify ──────────────────────────────────────────────────────
+  deploy:
+    name: Deploy → Netlify (production)
+    runs-on: ubuntu-latest
+    needs: ci-gate
+    environment:
+      name: production
+      url: https://mk-pets.com.ar
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL:              ${{ secrets.DATABASE_URL }}
+          DIRECT_URL:                ${{ secrets.DIRECT_URL }}
+          MP_ACCESS_TOKEN:           ${{ secrets.MP_ACCESS_TOKEN }}
+          MP_WEBHOOK_SECRET:         ${{ secrets.MP_WEBHOOK_SECRET }}
+          SESSION_SECRET:            ${{ secrets.SESSION_SECRET }}
+          NEXT_PUBLIC_BASE_URL:      ${{ vars.NEXT_PUBLIC_BASE_URL }}
+          NEXT_PUBLIC_MP_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_MP_PUBLIC_KEY }}
+
+      - name: Deploy to Netlify
+        uses: netlify/actions/cli@master
+        with:
+          args: deploy --prod --dir=.next --site=${{ secrets.NETLIFY_SITE_ID }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID:    ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Run DB migrations (production)
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}    # always use direct URL for migrations
+
+      - name: Notify deploy success
+        if: success()
+        run: |
+          echo "✅ Deploy to production completed at $(date -u)"
+          echo "🌐 URL: https://mk-pets.com.ar"
+
+      - name: Notify deploy failure
+        if: failure()
+        run: echo "❌ Deploy FAILED — check logs above"

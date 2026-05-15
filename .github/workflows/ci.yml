@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ── 1. Typecheck ───────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+  # ── 2. Lint ────────────────────────────────────────────────────────────────
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+  # ── 3. Unit tests ──────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        env:
+          MP_ACCESS_TOKEN:    test-token
+          MP_WEBHOOK_SECRET:  test-secret-32-chars-minimum-ok!
+          SESSION_SECRET:     test-session-32-chars-minimum-ok!
+          NEXT_PUBLIC_BASE_URL: http://localhost:3000
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ── 4. Security scan ───────────────────────────────────────────────────────
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secrets detection (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Dependency audit (high + critical only)
+        run: npm audit --audit-level=high
+        continue-on-error: true   # advisory only — doesn't block merge
+
+  # ── 5. Build check ─────────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build Next.js
+        run: npm run build
+        env:
+          # Dummy values so Next.js build doesn't fail on missing env vars
+          DATABASE_URL:             postgresql://user:pass@localhost:5432/mkpets
+          DIRECT_URL:               postgresql://user:pass@localhost:5432/mkpets
+          MP_ACCESS_TOKEN:          test-token
+          MP_WEBHOOK_SECRET:        test-secret-32-chars-minimum-ok!
+          SESSION_SECRET:           test-session-32-chars-minimum-ok!
+          NEXT_PUBLIC_BASE_URL:     https://mk-pets.com.ar
+          NEXT_PUBLIC_MP_PUBLIC_KEY: TEST_PUBLIC_KEY
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build
+          path: .next/
+          retention-days: 1

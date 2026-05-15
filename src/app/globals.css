@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { @apply scroll-smooth; }
+
+  body {
+    @apply bg-mk-white text-mk-dark font-body antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display font-bold;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-mk-orange text-white font-display font-bold
+           px-6 py-3 rounded-pill
+           transition-all duration-200
+           hover:bg-mk-orange-dark hover:shadow-md
+           active:scale-95
+           focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-mk-orange focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-transparent text-mk-orange font-display font-bold
+           px-6 py-3 rounded-pill border-2 border-mk-orange
+           transition-all duration-200
+           hover:bg-mk-orange-light active:scale-95
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mk-orange;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           bg-transparent text-mk-mid font-body font-medium
+           px-4 py-2 rounded-chip
+           transition-colors duration-200
+           hover:text-mk-dark hover:bg-mk-light
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mk-orange;
+  }
+
+  .product-card {
+    @apply bg-white rounded-card shadow-card overflow-hidden
+           transition-all duration-200 cursor-pointer
+           hover:shadow-card-hover hover:-translate-y-1;
+  }
+
+  .badge-new  { @apply inline-flex items-center px-2.5 py-0.5 rounded-chip text-xs font-display font-bold uppercase tracking-wide bg-mk-orange text-white; }
+  .badge-sale { @apply inline-flex items-center px-2.5 py-0.5 rounded-chip text-xs font-display font-bold uppercase tracking-wide bg-mk-green text-white; }
+  .badge-hot  { @apply inline-flex items-center px-2.5 py-0.5 rounded-chip text-xs font-display font-bold uppercase tracking-wide bg-mk-navy text-white; }
+
+  .category-chip {
+    @apply flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl
+           font-body font-medium text-xs whitespace-nowrap
+           transition-all duration-200 cursor-pointer
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mk-orange;
+  }
+
+  .category-chip-inactive { @apply bg-mk-light text-mk-mid hover:bg-mk-orange-light hover:text-mk-orange; }
+  .category-chip-active   { @apply bg-mk-orange text-white; }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-chip border-2 border-gray-200 bg-white
+           font-body text-mk-dark placeholder:text-mk-mid
+           transition-colors duration-200
+           focus:outline-none focus:border-mk-orange
+           disabled:bg-gray-50 disabled:opacity-60;
+  }
+
+  .input-error { @apply border-mk-error focus:border-mk-error; }
+
+  .section-title {
+    @apply font-display font-bold text-xl md:text-2xl text-mk-dark
+           flex items-center gap-2 mb-4;
+  }
+
+  .price-display {
+    @apply font-display font-black text-mk-orange;
+  }
+
+  .trust-badge {
+    @apply flex items-center gap-1.5 text-xs font-body text-mk-mid;
+  }
+
+  .shipping-strip {
+    @apply bg-mk-navy text-white text-xs font-body font-medium
+           flex items-center justify-center gap-6 py-2 px-4;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+  .font-tabular { font-variant-numeric: tabular-nums; }
+}

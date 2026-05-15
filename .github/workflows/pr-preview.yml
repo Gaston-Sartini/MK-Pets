@@ -1,0 +1,58 @@
+name: PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Deploy preview
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build (preview)
+        run: npm run build
+        env:
+          DATABASE_URL:              ${{ secrets.DATABASE_URL }}
+          DIRECT_URL:                ${{ secrets.DIRECT_URL }}
+          MP_ACCESS_TOKEN:           ${{ secrets.MP_ACCESS_TOKEN }}
+          MP_WEBHOOK_SECRET:         ${{ secrets.MP_WEBHOOK_SECRET }}
+          SESSION_SECRET:            ${{ secrets.SESSION_SECRET }}
+          NEXT_PUBLIC_BASE_URL:      ${{ secrets.NETLIFY_DEPLOY_PRIME_URL }}
+          NEXT_PUBLIC_MP_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_MP_PUBLIC_KEY }}
+
+      - name: Deploy preview to Netlify
+        id: netlify
+        uses: netlify/actions/cli@master
+        with:
+          args: deploy --dir=.next --site=${{ secrets.NETLIFY_SITE_ID }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID:    ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.netlify.outputs.deploy-url }}';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🐾 Preview desplegado\n\n**URL:** ${url}\n\n_Deploy automático de este PR — se actualiza en cada push._`
+            })
