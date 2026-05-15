@@ -6,6 +6,10 @@
   NODE_VERSION = "20"
   NPM_VERSION  = "10"
 
+# Incluir el binario del Prisma query engine en el bundle de Lambda
+[functions]
+  included_files = ["node_modules/.prisma/client/**", "node_modules/@prisma/client/**"]
+
 # Next.js runtime plugin (required for SSR/ISR on Netlify)
 [[plugins]]
   package = "@netlify/plugin-nextjs"
