@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_call:    # allow deploy.yml to reuse this workflow as a gate
 
 concurrency:
   group: ci-${{ github.ref }}
