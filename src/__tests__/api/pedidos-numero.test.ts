@@ -29,7 +29,7 @@ const DB_ORDER = {
   createdAt:      new Date(),
   items: [
     {
-      id:           'item-cuid-001',
+      id:           'clxitem0000010000000000001',
       quantity:     2,
       unitPrice:    1500,
       variantLabel: null,
@@ -88,8 +88,8 @@ describe('PATCH /api/pedidos/[numero]', () => {
     canModifyUntil: new Date(Date.now() + 20 * 60 * 1000),
     status:         'CONFIRMED',
     items: [
-      { id: 'item-cuid-001', unitPrice: 1500, productId: 'clxproduct0001', variantLabel: null },
-      { id: 'item-cuid-002', unitPrice: 2200, productId: 'clxproduct0002', variantLabel: '3kg' },
+      { id: 'clxitem0000010000000000001', unitPrice: 1500, productId: 'clxproduct0001', variantLabel: null },
+      { id: 'clxitem0000020000000000002', unitPrice: 2200, productId: 'clxproduct0002', variantLabel: '3kg' },
     ],
   }
 
@@ -100,7 +100,7 @@ describe('PATCH /api/pedidos/[numero]', () => {
 
   it('successfully updates quantities and recalculates total from DB prices', async () => {
     const res  = await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-001', quantity: 1 }, { id: 'item-cuid-002', quantity: 0 }] }),
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1 }, { id: 'clxitem0000020000000000002', quantity: 0 }] }),
       PARAMS as any
     )
     const body = await res.json()
@@ -114,7 +114,7 @@ describe('PATCH /api/pedidos/[numero]', () => {
 
   it('rejects item IDs that do not belong to this order (IDOR prevention)', async () => {
     const res = await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-FOREIGN', quantity: 1 }] }),
+      patchRequest({ items: [{ id: 'clxitemforeign000000000001', quantity: 1 }] }),
       PARAMS as any
     )
     expect(res.status).toBe(403)
@@ -124,15 +124,12 @@ describe('PATCH /api/pedidos/[numero]', () => {
 
   it('ignores any price fields in PATCH body — uses DB prices', async () => {
     await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-001', quantity: 1, unitPrice: 0.01 }] }),
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1, unitPrice: 0.01 }] }),
       PARAMS as any
     )
 
-    // Verify $transaction was called with DB price (1500), not 0.01
+    // Verify $transaction was called — price validation happens in the handler
     expect(vi.mocked(prisma.$transaction)).toHaveBeenCalled()
-    const txCall = vi.mocked(prisma.$transaction).mock.calls[0][0] as any[]
-    // The createMany call is the second operation in the transaction
-    // We just verify the transaction ran — price validation is in the handler
   })
 
   // ── Business logic ──────────────────────────────────────────────────────
@@ -144,7 +141,7 @@ describe('PATCH /api/pedidos/[numero]', () => {
     } as any)
 
     const res = await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-001', quantity: 1 }] }),
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1 }] }),
       PARAMS as any
     )
     expect(res.status).toBe(409)
@@ -157,7 +154,7 @@ describe('PATCH /api/pedidos/[numero]', () => {
     } as any)
 
     const res = await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-001', quantity: 1 }] }),
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1 }] }),
       PARAMS as any
     )
     expect(res.status).toBe(409)
@@ -165,7 +162,7 @@ describe('PATCH /api/pedidos/[numero]', () => {
 
   it('returns 422 when all items have quantity 0', async () => {
     const res = await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-001', quantity: 0 }] }),
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 0 }] }),
       PARAMS as any
     )
     expect(res.status).toBe(422)
@@ -175,7 +172,7 @@ describe('PATCH /api/pedidos/[numero]', () => {
     vi.mocked(prisma.order.findUnique).mockResolvedValueOnce(null)
 
     const res = await PATCH(
-      patchRequest({ items: [{ id: 'item-cuid-001', quantity: 1 }] }),
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1 }] }),
       PARAMS as any
     )
     expect(res.status).toBe(404)

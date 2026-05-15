@@ -1,4 +1,7 @@
-import { vi } from 'vitest'
+import { vi, beforeEach } from 'vitest'
+
+// Clear mock call history before each test so mock.calls[0] is always the current test's call
+beforeEach(() => { vi.clearAllMocks() })
 
 // Mock Prisma globally — every test that needs a specific return value
 // overrides with vi.mocked(prisma.order.findUnique).mockResolvedValueOnce(...)
