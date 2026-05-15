@@ -57,7 +57,8 @@ jobs:
       - name: Run DB migrations (production)
         run: npx prisma migrate deploy
         env:
-          DATABASE_URL: ${{ secrets.DIRECT_URL }}    # always use direct URL for migrations
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL:   ${{ secrets.DIRECT_URL }}
 
       - name: Notify deploy success
         if: success()
