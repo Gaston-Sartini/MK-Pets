@@ -6,6 +6,7 @@ import { CategoryChips } from '@/components/catalog/CategoryChips'
 import { ProductCardSkeleton } from '@/components/ui/Skeleton'
 import { getProducts } from '@/lib/queries'
 import type { Metadata } from 'next'
+import type { Product } from '@/types'
 
 // Search results are dynamic; category pages can be cached
 export const dynamic = 'auto'
@@ -79,10 +80,19 @@ async function getCategories() {
 export default async function ProductosPage({ searchParams }: PageProps) {
   const { cat, q, cursor } = searchParams
 
-  const [{ products }, categories] = await Promise.all([
-    getProducts({ categorySlug: cat, search: q, cursor }),
-    getCategories(),
-  ])
+  let products: Product[] = []
+  let categories: Awaited<ReturnType<typeof getCategories>> = []
+
+  try {
+    const [productsResult, categoriesResult] = await Promise.all([
+      getProducts({ categorySlug: cat, search: q, cursor }),
+      getCategories(),
+    ])
+    products = productsResult.products
+    categories = categoriesResult
+  } catch {
+    // DB unavailable — show empty state
+  }
 
   const activeCategory = categories.find(c => c.slug === cat)
 
@@ -92,7 +102,9 @@ export default async function ProductosPage({ searchParams }: PageProps) {
 
         {/* CHIPS CATEGORÍAS */}
         <nav aria-label="Filtrar por categoría" className="mb-6">
-          <CategoryChips />
+          <Suspense fallback={null}>
+            <CategoryChips />
+          </Suspense>
         </nav>
 
         {/* HEADER */}
