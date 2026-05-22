@@ -8,27 +8,32 @@ import { ShoppingCart, Search, Phone, X } from 'lucide-react'
 import { useCartStore } from '@/store/cart-store'
 import { cn } from '@/lib/utils'
 
-const CATEGORIES = [
-  { slug: 'gatos',    label: 'Gatos',    emoji: '🐱' },
-  { slug: 'perros',   label: 'Perros',   emoji: '🐶' },
-  { slug: 'snacks',   label: 'Snacks',   emoji: '🍬' },
-  { slug: 'humedos',  label: 'Húmedos',  emoji: '💧' },
-  { slug: 'arena',    label: 'Arena',    emoji: '🪨' },
-  { slug: 'higiene',  label: 'Higiene',  emoji: '🧴' },
-  { slug: 'ropa',     label: 'Ropa',     emoji: '👕' },
-  { slug: 'juguetes', label: 'Juguetes', emoji: '🎾' },
-]
+interface NavbarCategory {
+  slug:   string
+  name:   string
+  emoji:  string | null
+}
 
-export function Navbar() {
+interface NavbarProps {
+  categories?: NavbarCategory[]
+}
+
+export function Navbar({ categories = [] }: NavbarProps) {
   const [isScrolled,   setIsScrolled]   = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [searchQuery,  setSearchQuery]  = useState('')
+  // Zustand persist rehidrata desde localStorage tras montar; renderizar el
+  // badge del cart antes del mount causa hydration mismatch cuando hay items
+  // guardados (SSR ve 0, client ve N).
+  const [mounted,      setMounted]      = useState(false)
 
-  const totalItems  = useCartStore(s => s.totalItems())
-  const openDrawer  = useCartStore(s => s.openDrawer)
-  const router      = useRouter()
+  const totalItemsRaw = useCartStore(s => s.totalItems())
+  const totalItems    = mounted ? totalItemsRaw : 0
+  const openDrawer    = useCartStore(s => s.openDrawer)
+  const router        = useRouter()
 
   useEffect(() => {
+    setMounted(true)
     const handler = () => setIsScrolled(window.scrollY > 8)
     window.addEventListener('scroll', handler, { passive: true })
     return () => window.removeEventListener('scroll', handler)
@@ -173,25 +178,27 @@ export function Navbar() {
         )}
 
         {/* CATEGORY SUBNAV — desktop */}
-        <nav aria-label="Categorías" className="hidden md:flex items-center gap-1 pb-2 border-t border-gray-50 pt-1">
-          <Link
-            href="/productos"
-            className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
-                       text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
-          >
-            🐾 Todos
-          </Link>
-          {CATEGORIES.map(cat => (
+        {categories.length > 0 && (
+          <nav aria-label="Categorías" className="hidden md:flex items-center gap-1 pb-2 border-t border-gray-50 pt-1">
             <Link
-              key={cat.slug}
-              href={`/productos?cat=${cat.slug}`}
+              href="/productos"
               className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
                          text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
             >
-              {cat.emoji} {cat.label}
+              🐾 Todos
             </Link>
-          ))}
-        </nav>
+            {categories.map(cat => (
+              <Link
+                key={cat.slug}
+                href={`/productos?cat=${cat.slug}`}
+                className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
+                           text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
+              >
+                {cat.emoji ?? '🐾'} {cat.name}
+              </Link>
+            ))}
+          </nav>
+        )}
       </div>
     </header>
   )

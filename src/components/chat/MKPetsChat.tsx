@@ -75,6 +75,9 @@ function discountPct(current: number, original?: number | null) {
 }
 
 export default function MKPetsChat() {
+  // Render only after hydration — el componente lee sessionStorage y muestra
+  // estado que depende del client. Renderizar en SSR causa hydration mismatch.
+  const [mounted, setMounted]     = useState(false)
   const [isOpen, setIsOpen]       = useState(false)
   const [sessionId, setSessionId] = useState('ssr')
   const [messages, setMessages]   = useState<ChatMessage[]>([WELCOME])
@@ -86,6 +89,11 @@ export default function MKPetsChat() {
   const addItem    = useCartStore((s) => s.addItem)
   const openDrawer = useCartStore((s) => s.openDrawer)
   const addToast   = useToastStore((s) => s.addToast)
+
+  // Marcar mounted en el primer client effect (no corre en SSR)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Restaurar la sesión al montar
   useEffect(() => {
@@ -166,6 +174,9 @@ export default function MKPetsChat() {
     addToast({ message: `✓ ${card.name} agregado 🐾`, type: 'success' })
     openDrawer()
   }
+
+  // Evita hydration mismatch: SSR devuelve null, el browser monta tras hydratar.
+  if (!mounted) return null
 
   return (
     <>
