@@ -70,46 +70,62 @@ const OPENINGS = [
 // ─────────────────────────────────────────────────────────────────────────────
 const UNDERSTAND_PROMPT = `Clasificás mensajes de un chat de tienda de mascotas. Devolvés SIEMPRE un JSON con esta forma exacta:
 
-{"intent":"search|category|promos|chat","category_slug":"gatos|perros|snacks|humedos|higiene|ropa|juguetes|null","search_query":"<keywords sin stopwords>","reasoning":"<1 línea>"}
+{"intent":"search|category|promos|chat|add_to_cart|follow_up","category_slug":"gatos|perros|snacks|humedos|higiene|ropa|juguetes|null","search_query":"<keywords sin stopwords>","add_to_cart_hint":"<palabra clave del producto a agregar, o vacío>","reasoning":"<1 línea>"}
 
-REGLA DE ORO: preferí "search" sobre "category" siempre que puedas inferir KEYWORDS específicas. "category" solo cuando el cliente quiere ver una VITRINA general sin pista de qué busca.
+REGLA DE ORO: preferí "search" sobre "category" cuando puedas inferir KEYWORDS específicas. "category" SOLO cuando el cliente quiere una VITRINA general.
 
 Catálogo (slug = ejemplos de productos):
 ${CATALOG_HINT}
 
+Te llega también el contexto previo (lastShownProducts, lastBotQuestion) cuando hay turnos previos. Usalo para no romper el hilo.
+
 Decisión por intent:
 
-1) "chat" si es saludo/charla/agradecimiento/off-topic ("hola","gracias","todo bien","cuanto cuesta el envio","como va eso"). search_query:"", category_slug:null.
+1) "chat" — saludo/charla/agradecimiento/off-topic ("hola","gracias","todo bien","cuanto cuesta el envio","como va eso"). search_query:"", category_slug:null, add_to_cart_hint:"".
 
-2) "promos" si pide ofertas/promos/rebajas/liquidaciones. Si menciona categoría seteala. Si no, category_slug:null. search_query:"".
+2) "promos" — ofertas/promos/rebajas/liquidaciones. Si menciona categoría seteala.
 
-3) "search" (PREFERIDO cuando hay pistas): el cliente dice marca, formato, atributo, problema, parte del cuerpo, acción.
-   Mapeos típicos a search_query:
-   - "baño/bañar/lavar/pelo/champu" → search_query:"shampoo"
-   - "arena/sanitaria" → search_query:"arena"
-   - "jugar/aburrido/morder" → search_query:"juguete pelota varita"
-   - "abrigo/ropa/frío" → search_query:"campera ropa"
-   - "dientes/sarro" → search_query:"dentastix"
-   - "gordito/sobrepeso" → search_query:"castrado"
-   - "premio/galletita/snack" → category="snacks"
-   - "humedo/lata/sachet" → search_query:"humedo"
-   IMPORTANTE: si el cliente menciona un atributo Y la mascota, search_query DEBE incluir el atributo pero NO la mascota (la mascota la mapeás a category_slug). Ej: "shampoo perro" → search_query:"shampoo", category_slug:"higiene".
+3) "add_to_cart" — el cliente PIDE agregar un producto al carrito.
+   Patrones de frase típicos:
+   - "dale agregalo" / "agregalo" / "sumalo" / "lo quiero" → agrega el ÚLTIMO producto mostrado.
+   - "agregame X" / "sumame X" / "dale y X también" / "quiero X tambien" → agrega el producto que matchea X.
+   - Para add_to_cart, llená add_to_cart_hint con la palabra clave que identifica al producto que pide
+     (ej "varita","pelota","shampoo","whiskas","royal","pipicat"). Si solo dice "agregalo" sin
+     especificar, add_to_cart_hint:"_last" (palabra reservada para "el último mostrado").
+   - NO uses add_to_cart si no hay productos mostrados antes (no hay nada que agregar).
+     En ese caso devolvé intent="chat" pidiendo qué busca.
 
-4) "category" SOLO en casos genéricos sin más data:
+4) "follow_up" — el cliente responde a una PREGUNTA que el bot le hizo en el turno anterior.
+   Detectás esto cuando lastBotQuestion existe Y el mensaje del cliente es una respuesta natural a esa pregunta.
+   Ejemplos:
+   - bot pregunta "¿Para qué edad?" → cliente dice "Cachorro"/"Adulto"/"Senior"
+   - bot pregunta "¿Cuánto pesa?" → cliente dice "5 kilos"/"chiquito"
+   - bot pregunta "¿Es perro o gato?" → cliente dice "perro"/"gato"
+   En follow_up, search_query debe COMBINAR la query previa con el modifier que dijo el cliente.
+   Ej: prev query="varita", bot preguntó "¿para qué edad?", cliente dice "cachorro" → search_query:"varita cachorro".
+   category_slug puede mantenerse si era relevante.
+
+5) "search" (preferido cuando hay pistas): marca, formato, atributo, problema, parte del cuerpo, acción.
+   Mapeos típicos:
+   - "baño/bañar/lavar/pelo/champu" → search_query:"shampoo", category_slug:"higiene"
+   - "arena/sanitaria" → search_query:"arena", category_slug:"higiene"
+   - "jugar/aburrido/morder" → search_query:"juguete pelota varita", category_slug:"juguetes"
+   - "abrigo/ropa/frío" → category_slug:"ropa"
+   - "dientes/sarro" → search_query:"dentastix", category_slug:"snacks"
+   - "premio/galletita/snack" → category_slug:"snacks"
+   - "humedo/lata/sachet" → search_query:"humedo", category_slug:"humedos"
+   Si el cliente menciona atributo + mascota, search_query lleva el atributo Y category_slug la mascota.
+   Ej: "shampoo perro" → search_query:"shampoo", category_slug:"higiene".
+
+6) "category" SOLO en casos genéricos sin más data:
    - "que tenes para gato" → gatos
-   - "mostrame perros" → perros
+   - "comida para perro" → perros
    - "que hay de juguetes" → juguetes
-   - "comida para perro" / "alimento perro" → perros (no especifica marca/kilo)
-
-Continuación (mensajes cortos en una conversación con turnos previos):
-- "si dale", "ese va", "agregalo", "lo quiero" → intent:"chat" (confirma compra).
-- "otra opción", "mostrame más", "tenes algo distinto" → intent:"search" usando la query previa relevante.
-- "mas chico", "mas grande", "otra marca" → intent:"search" usando la query previa con ese modifier.
 
 search_query reglas:
 - Máximo 4 palabras.
 - NUNCA incluye: "para","de","el","la","los","las","perro","gato","perros","gatos","mi","tu","busco","quiero","tenés","tiene","necesito".
-- Solo sustantivos relevantes Y marcas conocidas (royal, pedigree, whiskas, pro plan, pipicat, eukanuba, purina, dentastix).
+- Solo sustantivos relevantes Y marcas (royal, pedigree, whiskas, pro plan, pipicat, eukanuba, purina, dentastix, temptations).
 
 category_slug VÁLIDOS: gatos, perros, snacks, humedos, higiene, ropa, juguetes. Nada más.
 
@@ -122,71 +138,92 @@ Salida = SOLO el JSON. Sin markdown, sin texto extra.`;
 // ─────────────────────────────────────────────────────────────────────────────
 const COMPOSE_PROMPT = `Sos el Vendedor Estrella de MK-Pets, tienda de mascotas en Buenos Aires. Cálido, argentino, copado. Hablás de vos.
 
-Input que te llega (JSON string): { userMessage, understanding, products[], suggestedOpening }.
+Input que te llega (JSON string): { userMessage, understanding, products[], suggestedOpening, pendingActions[] }.
 
 OUTPUT (SOLO este JSON, sin markdown):
 {"reply":"<1-2 líneas naturales argentinas>","suggestions":["<resp1>","<resp2>"]}
 
 # Cómo responder
 
-## Si products tiene cards:
-1. ARRANCÁ tu reply con la frase EXACTA del campo suggestedOpening (o algo MUY parecido). No inventes una apertura diferente. Si suggestedOpening es null o vacío, usá una breve neutra.
-2. Después de la apertura, podés mencionar el producto con su nombre real si suma contexto (no obligatorio).
-3. Cerrá con UNA pregunta de vendedor (variable):
-   - "¿Te sirve?"
-   - "¿Te lo agrego?"
-   - "¿Va por ahí?"
-   - "¿Para qué edad/talla?"
-   - "¿Querés que te muestre otro?"
-   - "¿Algo más?"
-   - "¿Cuánto pesa?"
-   - "¿Lo querés ahora?"
-4. suggestions = 2 respuestas POSIBLES del cliente a tu pregunta (no etiquetas genéricas):
-   - "¿Te lo agrego?" → ["Sí, dale","Mostrame otra opción"]
+## Si pendingActions[] tiene acciones (el backend ya agregó cosas al carrito)
+PRIORIDAD MÁXIMA. Confirmá la acción + pregunta de upsell. Variá:
+- "Listo, te sumé la <Name> al carrito 🛒. ¿Algo más?"
+- "Dale, te lo agregué 👌. ¿Algo más para tu mascota?"
+- "Ya te lo sumé. ¿Querés algo para acompañar?"
+- "Listo! ¿Algo más o vamos al checkout?"
+NO menciones productos como cards porque cards va vacío.
+suggestions tipo: ["Algo más para acompañar","Ir al carrito"] o ["Sí, mostrame snacks","No, gracias"].
+
+## Si products tiene cards (sin pendingActions):
+1. ARRANCÁ tu reply con la frase EXACTA del campo suggestedOpening (o casi idéntica).
+2. Podés mencionar el producto con su nombre real si suma contexto.
+3. Cerrá con UNA pregunta de vendedor variable:
+   - "¿Te sirve?" / "¿Te lo agrego?" / "¿Va por ahí?" / "¿Querés que te muestre otro?"
+   - Si hay pista del problema: "¿Para qué edad?" / "¿Cuánto pesa?" / "¿Pelo largo o corto?"
+4. suggestions = 2 respuestas POSIBLES del cliente a tu pregunta:
+   - "¿Te lo agrego?" → ["Sí, agregalo","Mostrame otra opción"]
    - "¿Cuánto pesa?" → ["Es chiquito","Pesa más de 10kg"]
    - "¿Para qué edad?" → ["Cachorro","Adulto"]
 
-## Si products está VACÍO ([])
-NUNCA digas "no hay". Empatizá + pedí más data útil.
-Variá entre:
+## Si products está VACÍO Y NO hay pendingActions
+NUNCA digas "no hay". Empatizá + pedí más data útil. Variá entre:
 - "Uy, ese justo no me queda 😕 contame un poco más"
 - "Mmm, así no encuentro nada. ¿Es para perro o gato?"
 - "No te puedo asegurar eso. ¿Tenés algún producto en mente?"
 suggestions con disparadores específicos a la consulta.
 
-## Si understanding.intent === "chat" (saludo, charla, off-topic)
+## Si understanding.intent === "chat"
 NO menciones productos.
-- Saludo ("hola","todo bien?"): variá entre "Re bien, acá pa' ayudarte 🐾 ¿qué necesitás?" / "Hola! ¿qué andás buscando?" / "Buenas! contame qué hay"
-- Agradecimiento ("gracias"): "De nada, cuando quieras 🐾" / "Dale, a las órdenes" / "Para eso estamos"
-- Off-topic ("que hora es","y el clima?"): respondé corto/amable + redirigí: "Andá a saber, igual contame qué buscás para tu mascota"
-- Pregunta abierta ("recomendas?"): pedí contexto: "Dale, contame qué mascota tenés y para qué"
-- Confirma compra ("si dale","agregalo"): "Listo, te lo sumo al carrito 🛒. ¿Algo más?"
-suggestions con disparadores REALES de catálogo: ["Alimento perro","Ver ofertas","Algo para gato","Snacks","Juguetes","Arena gato","Shampoo"].
+- Saludo: "Re bien, acá pa' ayudarte 🐾 ¿qué necesitás?" / "Hola! ¿qué andás buscando?" / "Buenas! contame"
+- Agradecimiento: "De nada, cuando quieras 🐾" / "Dale, a las órdenes"
+- Off-topic: respondé corto/amable + redirigí: "Andá a saber, contame qué buscás para tu mascota"
+- Pregunta abierta: pedí contexto: "Dale, contame qué mascota tenés y para qué"
+suggestions con disparadores reales: ["Alimento perro","Ver ofertas","Snacks","Juguetes","Arena","Shampoo"].
 
 # Reglas DURAS
 - 1-2 líneas. La card ya muestra nombre y precio.
-- NO repitas el nombre del producto más de UNA vez.
 - NO listes precios en el reply.
-- NO inventes productos que no están en "products".
+- NO inventes productos que no están en "products" ni en "pendingActions".
 - NO uses "Estimado", "Cordialmente", "Saludos cordiales".
 - Emoji: máximo 1 por mensaje.
-- PROHIBIDO: "Mirá, tengo esto que te puede venir 👇" (es plantilla, suena a bot).`;
+- PROHIBIDO: "Mirá, tengo esto que te puede venir 👇" (suena a bot).`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Code nodes
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BUILD_UNDERSTAND_INPUT = [
-  "// Input compacto al LLM Understand: solo el mensaje del cliente.",
-  "// El catálogo está hardcoded en el system prompt → ahorra tokens y latencia.",
+  "// Input compacto al LLM Understand: el mensaje del cliente + contexto",
+  "// (productos mostrados recientemente y última pregunta del bot).",
+  "// El catálogo está hardcoded en el system prompt → ahorra tokens.",
   "const wh = $input.first().json;",
   "const message = (wh.body && wh.body.message) || wh.message || '';",
   "const sessionId = (wh.body && wh.body.sessionId) || wh.sessionId || 'anon';",
   "",
+  "const sd = $getWorkflowStaticData('global');",
+  "sd.shownProducts = sd.shownProducts || {};",
+  "sd.botQuestions  = sd.botQuestions  || {};",
+  "",
+  "const shown        = sd.shownProducts[sessionId] || [];",
+  "const lastQuestion = sd.botQuestions[sessionId]  || '';",
+  "",
+  "// Resumen para el LLM (solo nombres + index, evita tokens innecesarios)",
+  "const shownSummary = shown.length",
+  "  ? shown.map((p, i) => (i + 1) + '. ' + p.name).join('; ')",
+  "  : '(ninguno todavía)';",
+  "",
+  "const lines = [",
+  "  'Mensaje del cliente: \"' + message + '\"',",
+  "  'Productos mostrados en turnos recientes: ' + shownSummary,",
+  "];",
+  "if (lastQuestion) lines.push('Última pregunta que hizo el bot: \"' + lastQuestion + '\"');",
+  "",
   "return [{",
   "  json: {",
   "    message, sessionId,",
-  "    understandInput: 'Mensaje del cliente: \"' + message + '\"',",
+  "    understandInput: lines.join('\\n'),",
+  "    shownProducts: shown,",
+  "    lastBotQuestion: lastQuestion,",
   "  }",
   "}];",
 ].join('\n');
@@ -196,21 +233,29 @@ const PARSE_UNDERSTANDING = [
   "let u;",
   "try { u = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { u = {}; }",
   "",
-  "const intent = ['search','category','promos','chat'].includes(u.intent) ? u.intent : 'chat';",
+  "const validIntents = ['search','category','promos','chat','add_to_cart','follow_up'];",
+  "const intent = validIntents.includes(u.intent) ? u.intent : 'chat';",
   "const categorySlug = ['gatos','perros','snacks','humedos','higiene','ropa','juguetes'].includes(u.category_slug) ? u.category_slug : null;",
   "const searchQuery = typeof u.search_query === 'string' ? u.search_query.trim() : '';",
+  "const addToCartHint = typeof u.add_to_cart_hint === 'string' ? u.add_to_cart_hint.trim() : '';",
   "",
   "const detect = $('Build Understand Input').first().json;",
-  "const { message, sessionId } = detect;",
+  "const { message, sessionId, shownProducts, lastBotQuestion } = detect;",
   "",
+  "// Decide qué RPC llamar.",
+  "// add_to_cart NO llama RPC (no se busca nada nuevo, se agrega un producto ya visto).",
+  "// follow_up reuse search con la query combinada del Understand.",
   "let rpcName, rpcBody;",
-  "if (intent === 'promos') {",
+  "if (intent === 'add_to_cart') {",
+  "  rpcName = 'top_promos';",
+  "  rpcBody = { limit_n: 0, category_slug: null };",
+  "} else if (intent === 'promos') {",
   "  rpcName = 'top_promos';",
   "  rpcBody = { limit_n: 6, category_slug: categorySlug };",
   "} else if (intent === 'category' && categorySlug) {",
   "  rpcName = 'products_by_category';",
   "  rpcBody = { category_slug: categorySlug, limit_n: 6 };",
-  "} else if (intent === 'search') {",
+  "} else if (intent === 'search' || intent === 'follow_up') {",
   "  rpcName = 'search_product_with_alternatives';",
   "  rpcBody = { query: searchQuery || message };",
   "} else {",
@@ -220,9 +265,10 @@ const PARSE_UNDERSTANDING = [
   "",
   "return [{",
   "  json: {",
-  "    message, sessionId, intent, categorySlug, searchQuery,",
+  "    message, sessionId, intent, categorySlug, searchQuery, addToCartHint,",
   "    rpcName, rpcBody,",
-  "    understanding: { intent, category_slug: categorySlug, search_query: searchQuery, reasoning: u.reasoning || '' },",
+  "    shownProducts, lastBotQuestion,",
+  "    understanding: { intent, category_slug: categorySlug, search_query: searchQuery, add_to_cart_hint: addToCartHint, reasoning: u.reasoning || '' },",
   "  }",
   "}];",
 ].join('\n');
@@ -232,9 +278,8 @@ const PARSE_UNDERSTANDING = [
 const OPENINGS_JSON = JSON.stringify(OPENINGS);
 
 const BUILD_COMPOSE_INPUT = [
-  "// Toma el response del Supabase RPC, arma cards normalizadas y elige",
-  "// una apertura ROTATIVA: las últimas 3 aperturas usadas por esa session",
-  "// se excluyen del pool, garantizando variación al 100%.",
+  "// Toma el response del Supabase RPC, arma cards normalizadas, elige",
+  "// apertura rotativa y resuelve add_to_cart contra productos previos.",
   "const all = $input.all();",
   "const wrapper = all[0] ? all[0].json : null;",
   "const body = wrapper && Object.prototype.hasOwnProperty.call(wrapper, 'body') ? wrapper.body : wrapper;",
@@ -250,20 +295,16 @@ const BUILD_COMPOSE_INPUT = [
   "    badge: p.badge || null,",
   "    image: Array.isArray(p.images) && p.images[0] ? p.images[0] : '',",
   "    isFeatured: !!p.isFeatured,",
-  "    variants: Array.isArray(p.variants) ? p.variants.map(v => ({",
-  "      label: v.label, price: Number(v.price), stock: Number(v.stock || 0),",
-  "      originalPrice: v.originalPrice == null ? null : Number(v.originalPrice),",
-  "    })) : [],",
   "  };",
   "}",
   "",
   "let products = [];",
-  "if (detect.intent === 'search') {",
+  "if (detect.intent === 'add_to_cart' || detect.intent === 'chat') {",
+  "  products = []; // no se buscan productos nuevos",
+  "} else if (detect.intent === 'search' || detect.intent === 'follow_up') {",
   "  const exact = body && body.exact ? compact(body.exact) : null;",
   "  const alts  = body && Array.isArray(body.alternatives) ? body.alternatives.map(compact).filter(Boolean) : [];",
   "  products = exact ? [exact, ...alts.slice(0, 2)] : alts.slice(0, 3);",
-  "} else if (detect.intent === 'chat') {",
-  "  products = [];",
   "} else {",
   "  const arr = Array.isArray(body) ? body : [];",
   "  products = arr.slice(0, 3).map(compact).filter(Boolean);",
@@ -271,45 +312,90 @@ const BUILD_COMPOSE_INPUT = [
   "",
   "const BADGE_MAP = { new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO' };",
   "const cards = products.map(p => ({",
-  "  productId: p.productId,",
-  "  variantLabel: null,",
-  "  name: p.name,",
-  "  image: p.image,",
-  "  slug: p.slug,",
-  "  unitPrice: p.basePrice,",
-  "  originalPrice: p.originalPrice,",
-  "  badge: BADGE_MAP[p.badge] || null,",
-  "  stock: p.stock,",
-  "  ctaLabel: 'Agregar al carrito',",
-  "  ctaAction: 'addToCart',",
+  "  productId: p.productId, variantLabel: null,",
+  "  name: p.name, image: p.image, slug: p.slug,",
+  "  unitPrice: p.basePrice, originalPrice: p.originalPrice,",
+  "  badge: BADGE_MAP[p.badge] || null, stock: p.stock,",
+  "  ctaLabel: 'Agregar al carrito', ctaAction: 'addToCart',",
   "  productUrl: '/producto/' + p.slug,",
   "}));",
   "",
-  "// Rotación de aperturas vía staticData del workflow.",
-  "// Pool: lista hardcoded. Excluimos las últimas 3 usadas en esa session.",
+  "// ── ROTACIÓN DE APERTURAS ───────────────────────────────────────────",
   "const ALL_OPENINGS = " + OPENINGS_JSON + ";",
   "const sd = $getWorkflowStaticData('global');",
   "sd.openingHistory = sd.openingHistory || {};",
+  "sd.shownProducts  = sd.shownProducts  || {};",
   "const usedRecently = sd.openingHistory[detect.sessionId] || [];",
   "const available = ALL_OPENINGS.filter(o => !usedRecently.includes(o));",
-  "const pool = available.length ? available : ALL_OPENINGS; // fallback si por algún motivo se agotó",
+  "const pool = available.length ? available : ALL_OPENINGS;",
   "const suggestedOpening = pool[Math.floor(Math.random() * pool.length)];",
+  "if (cards.length) {",
+  "  sd.openingHistory[detect.sessionId] = [suggestedOpening, ...usedRecently].slice(0, 3);",
+  "}",
   "",
-  "// Persistimos la elección en staticData. El Assemble Final la confirmará",
-  "// después de que el LLM efectivamente la use (igual la guardamos acá por",
-  "// si el LLM falla; mejor evitar repetir aunque sea ya).",
-  "const nextHistory = [suggestedOpening, ...usedRecently].slice(0, 3);",
-  "sd.openingHistory[detect.sessionId] = nextHistory;",
+  "// ── ADD-TO-CART RESOLVER ────────────────────────────────────────────",
+  "// Si el cliente pidió agregar algo, lo matcheamos contra los productos",
+  "// mostrados en turnos previos (los del staticData) por:",
+  "//   1) hint exacto del LLM (palabra clave: 'varita','pelota',etc.)",
+  "//   2) o '_last' → el primero de la lista (más reciente)",
+  "// El resultado va en actions[]; el frontend lo ejecuta sin click.",
+  "const actions = [];",
+  "if (detect.intent === 'add_to_cart') {",
+  "  const previous = detect.shownProducts || [];",
+  "  const hintRaw = (detect.addToCartHint || '').toLowerCase().trim();",
+  "  let target = null;",
+  "  if (hintRaw === '_last' || hintRaw === '') {",
+  "    target = previous[0] || null;",
+  "  } else {",
+  "    // Buscar el primer producto cuyo nombre contenga alguna palabra del hint",
+  "    const hintWords = hintRaw.split(/\\s+/).filter(w => w.length >= 3);",
+  "    for (const p of previous) {",
+  "      const n = (p.name || '').toLowerCase();",
+  "      if (hintWords.some(w => n.includes(w))) { target = p; break; }",
+  "    }",
+  "    // Fallback al último mostrado si el hint no matcheó",
+  "    if (!target) target = previous[0] || null;",
+  "  }",
+  "  if (target) {",
+  "    actions.push({",
+  "      type: 'addToCart',",
+  "      productId: target.productId,",
+  "      name: target.name,",
+  "      image: target.image || '',",
+  "      slug: target.slug,",
+  "      unitPrice: Number(target.unitPrice),",
+  "      variantLabel: null,",
+  "    });",
+  "  }",
+  "}",
+  "",
+  "// ── TRACKING DE PRODUCTOS MOSTRADOS ─────────────────────────────────",
+  "// Actualizamos shownProducts ANTES de pasar al Compose, pero solo",
+  "// merge: si en este turno hay cards nuevas, las pusheamos al frente y",
+  "// truncamos a 5. Si no hay cards (chat/add_to_cart), no tocamos.",
+  "if (cards.length) {",
+  "  const compactCards = cards.map(c => ({",
+  "    productId: c.productId, name: c.name, slug: c.slug,",
+  "    image: c.image, unitPrice: c.unitPrice,",
+  "  }));",
+  "  const prev = sd.shownProducts[detect.sessionId] || [];",
+  "  // Dedupe por productId",
+  "  const seen = new Set(compactCards.map(c => c.productId));",
+  "  const merged = [...compactCards, ...prev.filter(p => !seen.has(p.productId))];",
+  "  sd.shownProducts[detect.sessionId] = merged.slice(0, 5);",
+  "}",
   "",
   "const composeInput = {",
   "  userMessage: detect.message,",
   "  understanding: detect.understanding,",
   "  products: products.map(p => ({ name: p.name, slug: p.slug, price: p.basePrice, badge: p.badge })),",
   "  suggestedOpening,",
+  "  // Si vamos a ejecutar acciones, le decimos al LLM para que la copy lo refleje",
+  "  pendingActions: actions.length ? actions.map(a => ({ type: a.type, name: a.name })) : [],",
   "};",
   "",
   "return [{",
-  "  json: { ...detect, cards, composeInput, suggestedOpening }",
+  "  json: { ...detect, cards, actions, composeInput, suggestedOpening }",
   "}];",
 ].join('\n');
 
@@ -349,27 +435,50 @@ const ASSEMBLE_FINAL = [
   "  ? r.reply.trim()",
   "  : '¿Querés que te muestre algo en particular? 🐾';",
   "",
-  "// Sanity check: si el LLM ignoró la apertura sugerida y empezó con",
-  "// 'Mirá, tengo esto que te puede venir' (frase prohibida), reescribimos.",
+  "// Si el LLM ignoró la apertura sugerida y arrancó con la frase prohibida",
   "const FORBIDDEN = /^[¡]?[mM]ir[aá],?\\s+tengo esto/;",
   "if (FORBIDDEN.test(reply) && ctx.suggestedOpening && Array.isArray(ctx.cards) && ctx.cards.length) {",
   "  reply = ctx.suggestedOpening + '. ¿Te sirve?';",
+  "}",
+  "",
+  "// Si vamos a ejecutar acciones (add to cart) pero el LLM no lo mencionó,",
+  "// reemplazamos el reply por una confirmación natural.",
+  "const actions = Array.isArray(ctx.actions) ? ctx.actions : [];",
+  "if (actions.length) {",
+  "  const names = actions.map(a => a.name).join(' y ');",
+  "  // Si el reply no menciona 'sum'/'agreg'/'list', forzamos confirmación",
+  "  if (!/sum[ée]|agreg[ué]|list[oa]|ya te lo|al carrito/i.test(reply)) {",
+  "    reply = 'Listo, te sumé ' + names + ' al carrito 🛒. ¿Algo más?';",
+  "  }",
   "}",
   "",
   "const suggestions = Array.isArray(r.suggestions)",
   "  ? r.suggestions.filter(s => typeof s === 'string' && s.trim()).slice(0, 3)",
   "  : [];",
   "",
+  "// Persistimos la última pregunta del bot para que el siguiente turno la use",
+  "const sd = $getWorkflowStaticData('global');",
+  "sd.botQuestions = sd.botQuestions || {};",
+  "const questionMatch = reply.match(/[¿\\?][^?]+[\\?]/);",
+  "if (questionMatch) {",
+  "  sd.botQuestions[ctx.sessionId] = questionMatch[0].trim();",
+  "} else {",
+  "  // Limpiamos si no hubo pregunta",
+  "  sd.botQuestions[ctx.sessionId] = '';",
+  "}",
+  "",
   "return [{",
   "  json: {",
   "    reply,",
   "    cards: Array.isArray(ctx.cards) ? ctx.cards : [],",
   "    suggestions,",
+  "    actions, // ← clave nueva: el frontend ejecuta esto sin click",
   "    _meta: {",
   "      intent: ctx.intent,",
   "      category_slug: ctx.categorySlug,",
   "      reasoning: ctx.understanding && ctx.understanding.reasoning,",
   "      suggestedOpening: ctx.suggestedOpening,",
+  "      addToCartHint: ctx.addToCartHint,",
   "    }",
   "  }",
   "}];",

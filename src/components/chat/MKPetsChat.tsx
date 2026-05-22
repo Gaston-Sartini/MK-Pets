@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useCartStore } from '@/store/cart-store'
 import { useToastStore } from '@/store/toast-store'
 import { cn } from '@/lib/utils'
-import type { ChatCard, ChatResponse } from '@/lib/chat-types'
+import type { ChatCard, ChatResponse, ChatAction } from '@/lib/chat-types'
 
 type ChatMessage =
   | { id: string; from: 'user';   text: string }
@@ -139,6 +139,31 @@ export default function MKPetsChat() {
         body:    JSON.stringify({ message: text, sessionId }),
       })
       const data: ChatResponse = await r.json()
+
+      // Acciones que el backend pide ejecutar sin click del usuario.
+      // Caso típico: el cliente dijo "dale agregalo" y el LLM Understand
+      // detectó intent=add_to_cart; el backend ya validó contra los
+      // productos que se mostraron antes, así que confiamos en la acción.
+      if (Array.isArray(data.actions)) {
+        for (const action of data.actions) {
+          if (action.type === 'addToCart') {
+            addItem({
+              productId:    action.productId,
+              name:         action.name,
+              image:        action.image || '',
+              slug:         action.slug,
+              variantLabel: action.variantLabel ?? undefined,
+              unitPrice:    action.unitPrice,
+            })
+            addToast({ message: `✓ ${action.name} agregado 🐾`, type: 'success' })
+          }
+        }
+        // Si hubo al menos una addToCart, abrimos el drawer para que vea el resultado
+        if (data.actions.some((a: ChatAction) => a.type === 'addToCart')) {
+          openDrawer()
+        }
+      }
+
       const botMsg: ChatMessage = {
         id:    'b-' + Date.now(),
         from:  'bot',

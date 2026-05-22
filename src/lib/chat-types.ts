@@ -20,8 +20,30 @@ export interface ChatCard {
   ctaAction:      CardAction
 }
 
+/**
+ * Acción que el frontend debe ejecutar automáticamente al recibir la
+ * respuesta. Ej: el bot decide agregar un producto al carrito sin que el
+ * usuario tenga que clickear "Agregar al carrito".
+ *
+ * El productId DEBE existir en el catálogo y haber sido mostrado al cliente
+ * en turnos previos (el backend valida esto contra staticData.shownProducts).
+ */
+export interface ChatActionAddToCart {
+  type:         'addToCart'
+  productId:    string
+  name:         string
+  image?:       string
+  slug:         string
+  unitPrice:    number
+  variantLabel?: string | null
+}
+
+export type ChatAction = ChatActionAddToCart
+
 export interface ChatResponse {
   reply:        string
   cards:        ChatCard[]
   suggestions?: string[]
+  /** Acciones que el frontend ejecuta automáticamente sin click del usuario. */
+  actions?:     ChatAction[]
 }
