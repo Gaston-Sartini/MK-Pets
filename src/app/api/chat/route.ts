@@ -10,8 +10,13 @@ import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
+// CHAT_VERSION: 'v1' (regex routing) | 'v2' (LLM understand + conversational)
+// Default: v2 (más smart). Cambiar a 'v1' si v2 da problemas.
+const CHAT_VERSION = process.env.CHAT_VERSION || process.env.NEXT_PUBLIC_CHAT_VERSION || 'v2'
+
 const N8N_WEBHOOK_URL =
-  process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/mk-pets-chat'
+  process.env.N8N_WEBHOOK_URL ||
+  `http://localhost:5678/webhook/mk-pets-chat${CHAT_VERSION === 'v2' ? '-v2' : ''}`
 
 interface ChatRequestBody {
   message?:   string

@@ -110,15 +110,20 @@ END
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2) top_promos(limit_n)
+-- 2) top_promos(limit_n, category_slug)
 -- Productos con originalPrice o badge='sale'.
--- limit_n = 0 devuelve [] (lo usa el flow para el caso intent='chat').
+-- limit_n = 0 devuelve [] (lo usa el flow v1 para el caso intent='chat').
+-- category_slug (opcional): filtra promos por categoría — usado por v2 para
+-- "ofertas en humedo gato" → top_promos(6, 'humedos').
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION top_promos(limit_n integer DEFAULT 6)
+CREATE OR REPLACE FUNCTION top_promos(limit_n integer DEFAULT 6, category_slug text DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE sql
 STABLE
 AS $$
+  WITH cat AS (
+    SELECT id FROM "Category" WHERE slug = category_slug LIMIT 1
+  )
   SELECT coalesce(jsonb_agg(item ORDER BY (item->>'isFeatured')::boolean DESC), '[]'::jsonb)
   FROM (
     SELECT to_jsonb(p) || jsonb_build_object(
@@ -130,8 +135,41 @@ AS $$
     FROM "Product" p
     WHERE p."isActive" AND p.stock > 0
       AND (p."originalPrice" IS NOT NULL OR p.badge = 'sale')
+      AND (category_slug IS NULL OR p."categoryId" = (SELECT id FROM cat))
     ORDER BY p."isFeatured" DESC, p."createdAt" DESC
     LIMIT GREATEST(limit_n, 0)
+  ) s;
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 4) categories_with_sample() — usada por el flow v2 (LLM Understand)
+-- Devuelve la lista de categorías con un sample de 4 productos por categoría,
+-- para que el LLM sepa qué pertenece a cada slug.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION categories_with_sample()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT coalesce(jsonb_agg(item ORDER BY item->>'order'), '[]'::jsonb)
+  FROM (
+    SELECT jsonb_build_object(
+             'slug', c.slug,
+             'name', c.name,
+             'emoji', c.emoji,
+             'order', c."order",
+             'sample_products', coalesce((
+               SELECT jsonb_agg(jsonb_build_object('name', p.name, 'slug', p.slug, 'badge', p.badge))
+               FROM (
+                 SELECT name, slug, badge
+                 FROM "Product" p2
+                 WHERE p2."categoryId" = c.id AND p2."isActive" AND p2.stock > 0
+                 ORDER BY p2."isFeatured" DESC, p2."createdAt" DESC
+                 LIMIT 4
+               ) p
+             ), '[]'::jsonb)
+           ) AS item
+    FROM "Category" c
   ) s;
 $$;
 
@@ -164,5 +202,6 @@ $$;
 -- Permisos
 -- ─────────────────────────────────────────────────────────────────────────────
 GRANT EXECUTE ON FUNCTION search_product_with_alternatives(text)  TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION top_promos(integer)                     TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION top_promos(integer, text)               TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION products_by_category(text, integer)     TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION categories_with_sample()                TO anon, authenticated;
