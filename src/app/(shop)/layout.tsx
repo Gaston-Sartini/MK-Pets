@@ -1,8 +1,16 @@
 import { Navbar } from '@/components/layout/Navbar'
 import { CartDrawer } from '@/components/cart/CartDrawer'
 import { ToastContainer } from '@/components/ui/Toast'
+import ChatBridge from '@/components/chat/ChatBridge'
+import MKPetsChat from '@/components/chat/MKPetsChat'
+import { getCategories } from '@/lib/queries'
 
-export default function ShopLayout({ children }: { children: React.ReactNode }) {
+// Always read fresh categories so admin deletions/additions reflect immediately.
+export const revalidate = 60
+
+export default async function ShopLayout({ children }: { children: React.ReactNode }) {
+  const categories = await getCategories().catch(() => [])
+
   return (
     <>
       {/* WCAG 2.4.1 — Skip navigation link (visible on focus, screen-reader friendly) */}
@@ -15,7 +23,7 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
         Saltar al contenido principal
       </a>
 
-      <Navbar />
+      <Navbar categories={categories} />
       <CartDrawer />
       <ToastContainer />
 
@@ -23,6 +31,11 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       <main id="main-content" tabIndex={-1}>
         {children}
       </main>
+
+      {/* Chat: bridge expone window.MKPets (uso programático opcional);
+          MKPetsChat es el chat propio que llama a /api/chat → n8n. */}
+      <ChatBridge />
+      <MKPetsChat />
     </>
   )
 }

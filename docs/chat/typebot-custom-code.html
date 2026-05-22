@@ -1,0 +1,205 @@
+<!--
+  ─────────────────────────────────────────────────────────────────────────────
+  Bloque "Execute Code" de Typebot — MK-Pets
+  ─────────────────────────────────────────────────────────────────────────────
+
+  ¿Cómo se usa?
+    1. En tu flow de Typebot, después del bloque "Webhook" que llama a n8n,
+       agregá un bloque "Execute Code" (Bubble → Code).
+    2. Asegurate de tener una variable de Typebot llamada `chatResponse`
+       guardando la respuesta completa del webhook (JSON parseado).
+    3. Copiá TODO este bloque ahí adentro.
+
+  Qué hace:
+    • Pinta el `reply` como texto.
+    • Por cada card del array, crea una tarjeta visual con imagen, precio y CTA.
+    • Cuando el usuario clickea el CTA, llama a window.MKPets.addToCart(card)
+      o window.MKPets.openProduct(slug) según `ctaAction`.
+
+  Importante:
+    • Este código corre dentro del iframe del Typebot, pero window.parent es
+      la página de MK-Pets. Usamos window.parent.MKPets para acceder al bridge.
+    • Si MKPets no existe (Typebot abierto suelto fuera de la web) caemos a
+      abrir la URL del producto en una nueva pestaña.
+-->
+
+<style>
+  .mkp-cards   { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+  .mkp-card    { display:flex; gap:10px; align-items:flex-start;
+                 background:#fff; border:1px solid #eee; border-radius:12px;
+                 padding:10px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .mkp-img     { width:64px; height:64px; flex:0 0 64px; border-radius:8px;
+                 object-fit:cover; background:#f4f4f4; }
+  .mkp-body    { flex:1; min-width:0; }
+  .mkp-title   { font:600 13px/1.25 system-ui; color:#1f1d1b;
+                 margin:0 0 4px; word-break:break-word; }
+  .mkp-prices  { display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+                 margin-bottom:6px; }
+  .mkp-current { font:800 16px/1 system-ui; color:#FF6B35; }
+  .mkp-old     { font:500 12px/1 system-ui; color:#999; text-decoration:line-through; }
+  .mkp-off     { font:700 10px/1 system-ui; color:#fff; background:#16a34a;
+                 padding:2px 5px; border-radius:4px; }
+  .mkp-badge   { display:inline-block; font:700 9px/1 system-ui; color:#fff;
+                 background:#1f1d1b; padding:3px 6px; border-radius:4px;
+                 margin-bottom:4px; letter-spacing:.5px; }
+  .mkp-cta     { width:100%; margin-top:4px; padding:8px 12px;
+                 font:700 13px/1 system-ui; color:#fff; background:#FF6B35;
+                 border:0; border-radius:8px; cursor:pointer; transition:.15s; }
+  .mkp-cta:hover    { background:#e55a26; }
+  .mkp-cta:disabled { background:#ccc; cursor:default; }
+  .mkp-suggestions  { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .mkp-chip         { font:500 12px/1.2 system-ui; padding:6px 10px;
+                      border:1px solid #FF6B35; color:#FF6B35;
+                      border-radius:999px; cursor:pointer; background:#fff; }
+  .mkp-chip:hover   { background:#FFF1EA; }
+</style>
+
+<div id="mkp-root"></div>
+
+<script>
+  (function () {
+    // chatResponse comes from the Webhook block as a Typebot variable.
+    // Typebot exposes variables as {{var}} which is substituted before exec.
+    var resp = {{chatResponse}};
+    if (typeof resp === 'string') {
+      try { resp = JSON.parse(resp); } catch (_) { resp = null; }
+    }
+    if (!resp || typeof resp !== 'object') return;
+
+    var root = document.getElementById('mkp-root');
+
+    function fmtPrice(n) {
+      try { return '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 0 }); }
+      catch (_) { return '$' + n; }
+    }
+
+    function discountOff(current, original) {
+      if (!original || original <= current) return null;
+      var off = Math.floor(((original - current) / original) * 100);
+      return off >= 1 ? off : null;
+    }
+
+    function bridge() {
+      // The chat runs inside an iframe; MK-Pets bridge lives on the parent window.
+      try { return (window.parent && window.parent.MKPets) || window.MKPets || null; }
+      catch (_) { return null; }
+    }
+
+    function handleCta(card) {
+      var b = bridge();
+      if (card.ctaAction === 'openProduct') {
+        if (b) b.openProduct(card.slug);
+        else window.open('/producto/' + card.slug, '_blank');
+        return;
+      }
+      // default: addToCart
+      if (b) {
+        b.addToCart(card);
+      } else {
+        // Fallback: open product page so the user can still buy
+        window.open('/producto/' + card.slug, '_blank');
+      }
+    }
+
+    function renderCard(card) {
+      var off = discountOff(card.unitPrice, card.originalPrice);
+
+      var wrap = document.createElement('div');
+      wrap.className = 'mkp-card';
+
+      if (card.image) {
+        var img = document.createElement('img');
+        img.className = 'mkp-img';
+        img.alt = card.name || '';
+        img.src = card.image;
+        img.onerror = function () { this.style.visibility = 'hidden'; };
+        wrap.appendChild(img);
+      }
+
+      var body = document.createElement('div');
+      body.className = 'mkp-body';
+
+      if (card.badge) {
+        var b = document.createElement('span');
+        b.className = 'mkp-badge';
+        b.textContent = card.badge;
+        body.appendChild(b);
+      }
+
+      var title = document.createElement('p');
+      title.className = 'mkp-title';
+      title.textContent = card.variantLabel
+        ? card.name + ' · ' + card.variantLabel
+        : card.name;
+      body.appendChild(title);
+
+      var prices = document.createElement('div');
+      prices.className = 'mkp-prices';
+      if (off !== null) {
+        var old = document.createElement('span');
+        old.className = 'mkp-old';
+        old.textContent = fmtPrice(card.originalPrice);
+        prices.appendChild(old);
+
+        var pct = document.createElement('span');
+        pct.className = 'mkp-off';
+        pct.textContent = '-' + off + '%';
+        prices.appendChild(pct);
+      }
+      var cur = document.createElement('span');
+      cur.className = 'mkp-current';
+      cur.textContent = fmtPrice(card.unitPrice);
+      prices.appendChild(cur);
+      body.appendChild(prices);
+
+      var btn = document.createElement('button');
+      btn.className = 'mkp-cta';
+      btn.type = 'button';
+      btn.textContent = card.ctaLabel || 'Agregar al carrito';
+      btn.addEventListener('click', function () {
+        btn.disabled = true;
+        btn.textContent = '✓ Agregado';
+        handleCta(card);
+        setTimeout(function () {
+          btn.disabled = false;
+          btn.textContent = card.ctaLabel || 'Agregar al carrito';
+        }, 1500);
+      });
+      body.appendChild(btn);
+
+      wrap.appendChild(body);
+      return wrap;
+    }
+
+    // Cards
+    if (Array.isArray(resp.cards) && resp.cards.length) {
+      var cards = document.createElement('div');
+      cards.className = 'mkp-cards';
+      resp.cards.forEach(function (c) { cards.appendChild(renderCard(c)); });
+      root.appendChild(cards);
+    }
+
+    // Suggestions (quick replies)
+    if (Array.isArray(resp.suggestions) && resp.suggestions.length) {
+      var sugg = document.createElement('div');
+      sugg.className = 'mkp-suggestions';
+      resp.suggestions.slice(0, 3).forEach(function (text) {
+        var chip = document.createElement('button');
+        chip.className = 'mkp-chip';
+        chip.type = 'button';
+        chip.textContent = text;
+        chip.addEventListener('click', function () {
+          // Typebot's send-message function is exposed on window.Typebot
+          // when the block runs inside the chat embed.
+          if (window.Typebot && typeof window.Typebot.sendCommand === 'function') {
+            window.Typebot.sendCommand({ command: 'message', message: text });
+          } else if (typeof window.sendUserMessage === 'function') {
+            window.sendUserMessage(text);
+          }
+        });
+        sugg.appendChild(chip);
+      });
+      root.appendChild(sugg);
+    }
+  })();
+</script>

@@ -1,0 +1,137 @@
+{
+  "typebot": {
+    "version": "6",
+    "id": "mk-pets-vendedor",
+    "name": "mk-pets-vendedor",
+    "events": [
+      {
+        "id": "event-start",
+        "type": "start",
+        "outgoingEdgeId": "edge-start",
+        "graphCoordinates": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "groups": [
+      {
+        "id": "group-main",
+        "title": "Chat principal",
+        "graphCoordinates": {
+          "x": 0,
+          "y": 150
+        },
+        "blocks": [
+          {
+            "id": "block-text-1",
+            "type": "text",
+            "content": {
+              "richText": [
+                {
+                  "type": "p",
+                  "children": [
+                    {
+                      "text": "¡Hola! 🐾 ¿Qué buscás para tu mascota?"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "block-input-1",
+            "type": "text input",
+            "options": {
+              "labels": {
+                "placeholder": "Escribe un mensaje..."
+              },
+              "variableId": "var-usermsg"
+            }
+          },
+          {
+            "id": "block-webhook-1",
+            "type": "Webhook",
+            "options": {
+              "webhook": {
+                "url": "http://host.docker.internal:5678/webhook/mk-pets-chat",
+                "method": "POST",
+                "body": "{ \"message\": \"{{userMessage}}\", \"sessionId\": \"{{Result ID}}\" }",
+                "headers": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ]
+              },
+              "responseVariableMapping": [
+                {
+                  "bodyPath": "reply",
+                  "variableId": "var-chatresp"
+                }
+              ]
+            }
+          },
+          {
+            "id": "block-text-2",
+            "type": "text",
+            "content": {
+              "richText": [
+                {
+                  "type": "p",
+                  "children": [
+                    {
+                      "text": "{{chatResponse}}"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "block-script-1",
+            "type": "Code",
+            "options": {
+              "name": "MK-Pets Renderer",
+              "content": "<style>\n  .mkp-cards   { display:flex; flex-direction:column; gap:10px; margin-top:8px; }\n  .mkp-card    { display:flex; gap:10px; align-items:flex-start;\n                 background:#fff; border:1px solid #eee; border-radius:12px;\n                 padding:10px; box-shadow:0 1px 3px rgba(0,0,0,.04); }\n  .mkp-img     { width:64px; height:64px; flex:0 0 64px; border-radius:8px;\n                 object-fit:cover; background:#f4f4f4; }\n  .mkp-body    { flex:1; min-width:0; }\n  .mkp-title   { font:600 13px/1.25 system-ui; color:#1f1d1b;\n                 margin:0 0 4px; word-break:break-word; }\n  .mkp-prices  { display:flex; align-items:center; gap:6px; flex-wrap:wrap;\n                 margin-bottom:6px; }\n  .mkp-current { font:800 16px/1 system-ui; color:#FF6B35; }\n  .mkp-old     { font:500 12px/1 system-ui; color:#999; text-decoration:line-through; }\n  .mkp-off     { font:700 10px/1 system-ui; color:#fff; background:#16a34a;\n                 padding:2px 5px; border-radius:4px; }\n  .mkp-badge   { display:inline-block; font:700 9px/1 system-ui; color:#fff;\n                 background:#1f1d1b; padding:3px 6px; border-radius:4px;\n                 margin-bottom:4px; letter-spacing:.5px; }\n  .mkp-cta     { width:100%; margin-top:4px; padding:8px 12px;\n                 font:700 13px/1 system-ui; color:#fff; background:#FF6B35;\n                 border:0; border-radius:8px; cursor:pointer; transition:.15s; }\n  .mkp-cta:hover    { background:#e55a26; }\n  .mkp-cta:disabled { background:#ccc; cursor:default; }\n  .mkp-suggestions  { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }\n  .mkp-chip         { font:500 12px/1.2 system-ui; padding:6px 10px;\n                      border:1px solid #FF6B35; color:#FF6B35;\n                      border-radius:999px; cursor:pointer; background:#fff; }\n  .mkp-chip:hover   { background:#FFF1EA; }\n</style>\n\n<div id=\"mkp-root\"></div>\n\n<script>\n  (function () {\n    // chatResponse comes from the Webhook block as a Typebot variable.\n    // Typebot exposes variables as {{var}} which is substituted before exec.\n    var resp = {{chatResponse}};\n    if (typeof resp === 'string') {\n      try { resp = JSON.parse(resp); } catch (_) { resp = null; }\n    }\n    if (!resp || typeof resp !== 'object') return;\n\n    var root = document.getElementById('mkp-root');\n\n    function fmtPrice(n) {\n      try { return '$' + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 0 }); }\n      catch (_) { return '$' + n; }\n    }\n\n    function discountOff(current, original) {\n      if (!original || original <= current) return null;\n      var off = Math.floor(((original - current) / original) * 100);\n      return off >= 1 ? off : null;\n    }\n\n    function bridge() {\n      // The chat runs inside an iframe; MK-Pets bridge lives on the parent window.\n      try { return (window.parent && window.parent.MKPets) || window.MKPets || null; }\n      catch (_) { return null; }\n    }\n\n    function handleCta(card) {\n      var b = bridge();\n      if (card.ctaAction === 'openProduct') {\n        if (b) b.openProduct(card.slug);\n        else window.open('/producto/' + card.slug, '_blank');\n        return;\n      }\n      // default: addToCart\n      if (b) {\n        b.addToCart(card);\n      } else {\n        // Fallback: open product page so the user can still buy\n        window.open('/producto/' + card.slug, '_blank');\n      }\n    }\n\n    function renderCard(card) {\n      var off = discountOff(card.unitPrice, card.originalPrice);\n\n      var wrap = document.createElement('div');\n      wrap.className = 'mkp-card';\n\n      if (card.image) {\n        var img = document.createElement('img');\n        img.className = 'mkp-img';\n        img.alt = card.name || '';\n        img.src = card.image;\n        img.onerror = function () { this.style.visibility = 'hidden'; };\n        wrap.appendChild(img);\n      }\n\n      var body = document.createElement('div');\n      body.className = 'mkp-body';\n\n      if (card.badge) {\n        var b = document.createElement('span');\n        b.className = 'mkp-badge';\n        b.textContent = card.badge;\n        body.appendChild(b);\n      }\n\n      var title = document.createElement('p');\n      title.className = 'mkp-title';\n      title.textContent = card.variantLabel\n        ? card.name + ' · ' + card.variantLabel\n        : card.name;\n      body.appendChild(title);\n\n      var prices = document.createElement('div');\n      prices.className = 'mkp-prices';\n      if (off !== null) {\n        var old = document.createElement('span');\n        old.className = 'mkp-old';\n        old.textContent = fmtPrice(card.originalPrice);\n        prices.appendChild(old);\n\n        var pct = document.createElement('span');\n        pct.className = 'mkp-off';\n        pct.textContent = '-' + off + '%';\n        prices.appendChild(pct);\n      }\n      var cur = document.createElement('span');\n      cur.className = 'mkp-current';\n      cur.textContent = fmtPrice(card.unitPrice);\n      prices.appendChild(cur);\n      body.appendChild(prices);\n\n      var btn = document.createElement('button');\n      btn.className = 'mkp-cta';\n      btn.type = 'button';\n      btn.textContent = card.ctaLabel || 'Agregar al carrito';\n      btn.addEventListener('click', function () {\n        btn.disabled = true;\n        btn.textContent = '✓ Agregado';\n        handleCta(card);\n        setTimeout(function () {\n          btn.disabled = false;\n          btn.textContent = card.ctaLabel || 'Agregar al carrito';\n        }, 1500);\n      });\n      body.appendChild(btn);\n\n      wrap.appendChild(body);\n      return wrap;\n    }\n\n    // Cards\n    if (Array.isArray(resp.cards) && resp.cards.length) {\n      var cards = document.createElement('div');\n      cards.className = 'mkp-cards';\n      resp.cards.forEach(function (c) { cards.appendChild(renderCard(c)); });\n      root.appendChild(cards);\n    }\n\n    // Suggestions (quick replies)\n    if (Array.isArray(resp.suggestions) && resp.suggestions.length) {\n      var sugg = document.createElement('div');\n      sugg.className = 'mkp-suggestions';\n      resp.suggestions.slice(0, 3).forEach(function (text) {\n        var chip = document.createElement('button');\n        chip.className = 'mkp-chip';\n        chip.type = 'button';\n        chip.textContent = text;\n        chip.addEventListener('click', function () {\n          // Typebot's send-message function is exposed on window.Typebot\n          // when the block runs inside the chat embed.\n          if (window.Typebot && typeof window.Typebot.sendCommand === 'function') {\n            window.Typebot.sendCommand({ command: 'message', message: text });\n          } else if (typeof window.sendUserMessage === 'function') {\n            window.sendUserMessage(text);\n          }\n        });\n        sugg.appendChild(chip);\n      });\n      root.appendChild(sugg);\n    }\n  })();\n</script>\n"
+            }
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-start",
+        "from": {
+          "eventId": "event-start"
+        },
+        "to": {
+          "groupId": "group-main"
+        }
+      },
+      {
+        "id": "edge-loop",
+        "from": {
+          "blockId": "block-script-1"
+        },
+        "to": {
+          "blockId": "block-input-1"
+        }
+      }
+    ],
+    "variables": [
+      {
+        "id": "var-usermsg",
+        "name": "userMessage",
+        "isSessionVariable": false
+      },
+      {
+        "id": "var-chatresp",
+        "name": "chatResponse",
+        "isSessionVariable": false
+      }
+    ],
+    "theme": {},
+    "settings": {}
+  }
+}

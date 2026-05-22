@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# n8n self-hosted — automatización del chat IA de MK-Pets
+#
+# Servicio:
+#   - n8n   Editor + runtime de workflows   → http://localhost:5678
+#
+# El workflow "Typebot IA MK-Pets (Groq Agent)" expone un webhook:
+#   POST http://localhost:5678/webhook/mk-pets-chat
+#
+# Cómo correrlo (desde infra/n8n/):
+#   docker compose up -d
+#
+# Para apagarlo (no borra datos, viven en el volumen n8n_data):
+#   docker compose down
+#
+# Logs:
+#   docker compose logs -f n8n
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - '5678:5678'
+    environment:
+      # URL pública del editor + base para los webhooks
+      N8N_HOST:        localhost
+      N8N_PORT:        5678
+      N8N_PROTOCOL:    http
+      WEBHOOK_URL:     http://localhost:5678/
+      N8N_EDITOR_BASE_URL: http://localhost:5678/
+
+      # Zona horaria (cron / schedule nodes)
+      GENERIC_TIMEZONE: America/Argentina/Buenos_Aires
+      TZ:               America/Argentina/Buenos_Aires
+
+      # Clave para cifrar credenciales guardadas. Si cambia, n8n no puede
+      # desencriptar credenciales viejas. Se persiste igual en el volumen.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+
+      # Variable que el workflow lee como $env.SUPABASE_ANON_KEY
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_URL:      ${SUPABASE_URL}
+
+      # Ejecutar tasks en proceso separado (recomendado en versiones nuevas)
+      N8N_RUNNERS_ENABLED:               'true'
+      N8N_BLOCK_ENV_ACCESS_IN_NODE:      'false'   # permite $env en nodes (lo usa la tool)
+      N8N_DIAGNOSTICS_ENABLED:           'false'
+      N8N_PERSONALIZATION_ENABLED:       'false'
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
