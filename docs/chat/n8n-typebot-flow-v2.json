@@ -20,61 +20,14 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://ctttonxivmozsqegzotb.supabase.co/rest/v1/rpc/categories_with_sample",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.SUPABASE_ANON_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_ANON_KEY }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=representation"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={}",
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true,
-              "fullResponse": true,
-              "responseFormat": "json"
-            }
-          }
-        }
-      },
-      "id": "http-catalog",
-      "name": "Get Catalog",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -480,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Toma el catálogo y arma un input mínimo para el LLM Understand.\n// Mantenemos pocos tokens para esquivar el rate limit TPM de Groq.\nconst all = $input.all();\nconst catalogResp = all[0] ? all[0].json : null;\nconst wh = $('Webhook').first().json;\nconst message = (wh.body && wh.body.message) || wh.message || '';\nconst sessionId = (wh.body && wh.body.sessionId) || wh.sessionId || 'anon';\n\nconst wrapper = catalogResp && Object.prototype.hasOwnProperty.call(catalogResp, 'body') ? catalogResp.body : catalogResp;\nconst categories = Array.isArray(wrapper) ? wrapper : [];\n\n// Catálogo súper compacto: una línea por categoría con 2 ejemplos cortos.\n// Eso le alcanza al modelo para mapear keywords → slug.\nconst catalogLines = categories.map(c => {\n  const ex = (c.sample_products || []).slice(0, 2).map(p => p.name).join(' / ');\n  return c.slug + ' = ' + (ex || c.name);\n}).join('\\n');\n\nreturn [{\n  json: {\n    message, sessionId,\n    // Input pasado al Understand (string, no JSON, ahorra ~30% tokens)\n    understandInput: 'Mensaje del cliente: \"' + message + '\"\\n\\nCatálogo (slug = ejemplos):\\n' + catalogLines,\n  }\n}];"
+        "jsCode": "// Input compacto al LLM Understand: solo el mensaje del cliente.\n// El catálogo está hardcoded en el system prompt → ahorra tokens y latencia.\nconst wh = $input.first().json;\nconst message = (wh.body && wh.body.message) || wh.message || '';\nconst sessionId = (wh.body && wh.body.sessionId) || wh.sessionId || 'anon';\n\nreturn [{\n  json: {\n    message, sessionId,\n    understandInput: 'Mensaje del cliente: \"' + message + '\"',\n  }\n}];"
       },
       "id": "code-build-understand",
       "name": "Build Understand Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -260,
+        -480,
         0
       ]
     },
@@ -83,7 +36,7 @@
         "promptType": "define",
         "text": "={{ $json.understandInput }}",
         "options": {
-          "systemMessage": "Clasificás mensajes de un chat de tienda de mascotas. Devolvés SIEMPRE un JSON con esta forma exacta:\n\n{\"intent\":\"search|category|promos|chat\",\"category_slug\":\"gatos|perros|snacks|humedos|higiene|ropa|juguetes|null\",\"search_query\":\"<keywords sin stopwords>\",\"reasoning\":\"<1 línea>\"}\n\nREGLA DE ORO: preferí \"search\" sobre \"category\" siempre que puedas inferir KEYWORDS específicas. \"category\" solo cuando el cliente quiere ver una VITRINA general sin pista de qué busca.\n\nDecisión por intent:\n\n1) \"chat\" si es saludo/charla/agradecimiento/off-topic (\"hola\",\"gracias\",\"todo bien\",\"cuanto cuesta el envio\",\"como va eso\"). search_query:\"\", category_slug:null.\n\n2) \"promos\" si pide ofertas/promos/rebajas/liquidaciones. Si menciona categoría seteala. Si no, category_slug:null. search_query:\"\".\n\n3) \"search\" (PREFERIDO cuando hay pistas): el cliente dice marca, formato, atributo, problema, parte del cuerpo, acción.\n   Mapeos típicos a search_query:\n   - \"baño/bañar/lavar/pelo/champu\" → \"shampoo\"\n   - \"arena/sanitaria/baño del gato (suciedad)\" → \"arena\"\n   - \"jugar/aburrido/morder\" → \"juguete pelota varita\"\n   - \"abrigo/ropa/frío\" → \"campera ropa\"\n   - \"dientes/sarro\" → \"dentastix snack\"\n   - \"gordito/sobrepeso\" → \"castrado dieta\"\n   - \"premio/galletita/snack\" → \"snacks\"\n   - \"comer/comida/croquetas/alimento balanceado\" → category con slug correcto\n   - \"humedo/lata/sachet\" → \"humedo\"\n   IMPORTANTE: si el cliente menciona un atributo Y la mascota, search_query DEBE incluir el atributo pero NO la mascota (la mascota la mapeás a category_slug). Ej: \"shampoo perro\" → search_query:\"shampoo\", category_slug:\"higiene\".\n\n4) \"category\" SOLO en casos genéricos sin más data:\n   - \"que tenes para gato\" → gatos\n   - \"mostrame perros\" → perros\n   - \"que hay de juguetes\" → juguetes\n   - \"comida para perro\" / \"alimento perro\" → perros (porque no especifica marca/kilo)\n\nContinuación (mensajes cortos en una conversación con turnos previos):\n- \"si dale\", \"ese va\", \"agregalo\", \"lo quiero\" → intent:\"chat\" (confirma compra).\n- \"otra opción\", \"mostrame más\", \"tenes algo distinto\" → intent:\"search\" usando la query previa relevante.\n- \"mas chico\", \"mas grande\", \"otra marca\" → intent:\"search\" usando la query previa con ese modifier.\n\nsearch_query reglas:\n- Máximo 4 palabras.\n- NUNCA incluye: \"para\",\"de\",\"el\",\"la\",\"los\",\"las\",\"perro\",\"gato\",\"perros\",\"gatos\",\"mi\",\"tu\",\"busco\",\"quiero\",\"tenés\",\"tiene\",\"necesito\".\n- Solo sustantivos relevantes Y marcas conocidas (royal, pedigree, whiskas, pro plan, pipicat, eukanuba, purina, dentastix).\n\ncategory_slug VÁLIDOS: gatos, perros, snacks, humedos, higiene, ropa, juguetes. Nada más.\n\nSalida = SOLO el JSON. Sin markdown, sin texto extra."
+          "systemMessage": "Clasificás mensajes de un chat de tienda de mascotas. Devolvés SIEMPRE un JSON con esta forma exacta:\n\n{\"intent\":\"search|category|promos|chat\",\"category_slug\":\"gatos|perros|snacks|humedos|higiene|ropa|juguetes|null\",\"search_query\":\"<keywords sin stopwords>\",\"reasoning\":\"<1 línea>\"}\n\nREGLA DE ORO: preferí \"search\" sobre \"category\" siempre que puedas inferir KEYWORDS específicas. \"category\" solo cuando el cliente quiere ver una VITRINA general sin pista de qué busca.\n\nCatálogo (slug = ejemplos de productos):\ngatos = Royal Canin, Pro Plan Castrado\nperros = Pro Plan Razas Medianas, Pedigree Carne, Eukanuba\nsnacks = Dentastix, Temptations\nhumedos = Whiskas Atún, Pedigree Húmedo Pollo\nhigiene = Pipicat Arena, Shampoo Neutro\nropa = (sin productos por ahora)\njuguetes = Pelota Goma, Varita Plumas para Gatos\n\nDecisión por intent:\n\n1) \"chat\" si es saludo/charla/agradecimiento/off-topic (\"hola\",\"gracias\",\"todo bien\",\"cuanto cuesta el envio\",\"como va eso\"). search_query:\"\", category_slug:null.\n\n2) \"promos\" si pide ofertas/promos/rebajas/liquidaciones. Si menciona categoría seteala. Si no, category_slug:null. search_query:\"\".\n\n3) \"search\" (PREFERIDO cuando hay pistas): el cliente dice marca, formato, atributo, problema, parte del cuerpo, acción.\n   Mapeos típicos a search_query:\n   - \"baño/bañar/lavar/pelo/champu\" → search_query:\"shampoo\"\n   - \"arena/sanitaria\" → search_query:\"arena\"\n   - \"jugar/aburrido/morder\" → search_query:\"juguete pelota varita\"\n   - \"abrigo/ropa/frío\" → search_query:\"campera ropa\"\n   - \"dientes/sarro\" → search_query:\"dentastix\"\n   - \"gordito/sobrepeso\" → search_query:\"castrado\"\n   - \"premio/galletita/snack\" → category=\"snacks\"\n   - \"humedo/lata/sachet\" → search_query:\"humedo\"\n   IMPORTANTE: si el cliente menciona un atributo Y la mascota, search_query DEBE incluir el atributo pero NO la mascota (la mascota la mapeás a category_slug). Ej: \"shampoo perro\" → search_query:\"shampoo\", category_slug:\"higiene\".\n\n4) \"category\" SOLO en casos genéricos sin más data:\n   - \"que tenes para gato\" → gatos\n   - \"mostrame perros\" → perros\n   - \"que hay de juguetes\" → juguetes\n   - \"comida para perro\" / \"alimento perro\" → perros (no especifica marca/kilo)\n\nContinuación (mensajes cortos en una conversación con turnos previos):\n- \"si dale\", \"ese va\", \"agregalo\", \"lo quiero\" → intent:\"chat\" (confirma compra).\n- \"otra opción\", \"mostrame más\", \"tenes algo distinto\" → intent:\"search\" usando la query previa relevante.\n- \"mas chico\", \"mas grande\", \"otra marca\" → intent:\"search\" usando la query previa con ese modifier.\n\nsearch_query reglas:\n- Máximo 4 palabras.\n- NUNCA incluye: \"para\",\"de\",\"el\",\"la\",\"los\",\"las\",\"perro\",\"gato\",\"perros\",\"gatos\",\"mi\",\"tu\",\"busco\",\"quiero\",\"tenés\",\"tiene\",\"necesito\".\n- Solo sustantivos relevantes Y marcas conocidas (royal, pedigree, whiskas, pro plan, pipicat, eukanuba, purina, dentastix).\n\ncategory_slug VÁLIDOS: gatos, perros, snacks, humedos, higiene, ropa, juguetes. Nada más.\n\nSalida = SOLO el JSON. Sin markdown, sin texto extra."
         }
       },
       "id": "agent-understand",
@@ -91,7 +44,7 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.6,
       "position": [
-        -60,
+        -260,
         0
       ]
     },
@@ -108,30 +61,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
       "typeVersion": 1,
       "position": [
-        -60,
-        260
-      ],
-      "credentials": {
-        "groqApi": {
-          "id": "CYZbXLPJGbNDHfrX",
-          "name": "Groq account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "model": "llama-3.3-70b-versatile",
-        "options": {
-          "temperature": 0.95,
-          "responseFormat": "json_object"
-        }
-      },
-      "id": "model-compose",
-      "name": "Groq Model Compose",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
-      "typeVersion": 1,
-      "position": [
-        840,
+        -260,
         260
       ],
       "credentials": {
@@ -145,27 +75,27 @@
       "parameters": {
         "sessionIdType": "customKey",
         "sessionKey": "={{ $('Webhook').item.json.body?.sessionId ?? 'anon' }}",
-        "contextWindowLength": 8
+        "contextWindowLength": 6
       },
       "id": "memory-understand",
       "name": "Memory Understand",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.2,
       "position": [
-        60,
+        -140,
         260
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Toma la salida del AI Agent 'Understand' (JSON con intent/category/search_query)\n// y arma el rpcName + rpcBody para la siguiente HTTP Request.\nconst raw = $json.output ?? $json.text ?? $json;\nlet u;\ntry { u = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { u = {}; }\n\nconst intent = ['search','category','promos','chat'].includes(u.intent) ? u.intent : 'chat';\nconst categorySlug = ['gatos','perros','snacks','humedos','higiene','ropa','juguetes'].includes(u.category_slug) ? u.category_slug : null;\nconst searchQuery = typeof u.search_query === 'string' ? u.search_query.trim() : '';\n\nconst detect = $('Build Understand Input').first().json;\nconst message = detect.message;\nconst sessionId = detect.sessionId;\n\n// Decidir RPC. Si intent=chat → llamamos a top_promos(0) que devuelve [] (no\n// rompe la cadena y no contamina al Compose Reply).\nlet rpcName, rpcBody;\nif (intent === 'promos') {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 6, category_slug: categorySlug };\n} else if (intent === 'category' && categorySlug) {\n  rpcName = 'products_by_category';\n  rpcBody = { category_slug: categorySlug, limit_n: 6 };\n} else if (intent === 'search') {\n  rpcName = 'search_product_with_alternatives';\n  // Preferimos el search_query del LLM; si vino vacío, usamos message\n  rpcBody = { query: searchQuery || message };\n} else {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 0, category_slug: null };\n}\n\nreturn [{\n  json: {\n    message, sessionId, intent, categorySlug, searchQuery,\n    rpcName, rpcBody,\n    understanding: { intent, category_slug: categorySlug, search_query: searchQuery, reasoning: u.reasoning || '' },\n  }\n}];"
+        "jsCode": "const raw = $json.output ?? $json.text ?? $json;\nlet u;\ntry { u = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { u = {}; }\n\nconst intent = ['search','category','promos','chat'].includes(u.intent) ? u.intent : 'chat';\nconst categorySlug = ['gatos','perros','snacks','humedos','higiene','ropa','juguetes'].includes(u.category_slug) ? u.category_slug : null;\nconst searchQuery = typeof u.search_query === 'string' ? u.search_query.trim() : '';\n\nconst detect = $('Build Understand Input').first().json;\nconst { message, sessionId } = detect;\n\nlet rpcName, rpcBody;\nif (intent === 'promos') {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 6, category_slug: categorySlug };\n} else if (intent === 'category' && categorySlug) {\n  rpcName = 'products_by_category';\n  rpcBody = { category_slug: categorySlug, limit_n: 6 };\n} else if (intent === 'search') {\n  rpcName = 'search_product_with_alternatives';\n  rpcBody = { query: searchQuery || message };\n} else {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 0, category_slug: null };\n}\n\nreturn [{\n  json: {\n    message, sessionId, intent, categorySlug, searchQuery,\n    rpcName, rpcBody,\n    understanding: { intent, category_slug: categorySlug, search_query: searchQuery, reasoning: u.reasoning || '' },\n  }\n}];"
       },
       "id": "code-parse-understand",
       "name": "Decide RPC",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        180,
+        -40,
         0
       ]
     },
@@ -212,20 +142,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        400,
+        180,
         0
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Recibe el response de Supabase RPC y arma:\n//   - products[] normalizados (para cards finales)\n//   - composeInput JSON listo para el AI Agent 'Compose Reply'\nconst all = $input.all();\nconst wrapper = all[0] ? all[0].json : null;\nconst body = wrapper && Object.prototype.hasOwnProperty.call(wrapper, 'body') ? wrapper.body : wrapper;\nconst detect = $('Decide RPC').first().json;\n\nfunction compact(p) {\n  if (!p || !p.id) return null;\n  return {\n    productId: p.id,\n    name: p.name,\n    slug: p.slug,\n    basePrice: Number(p.basePrice),\n    originalPrice: p.originalPrice == null ? null : Number(p.originalPrice),\n    stock: Number(p.stock || 0),\n    badge: p.badge || null,\n    image: Array.isArray(p.images) && p.images[0] ? p.images[0] : '',\n    isFeatured: !!p.isFeatured,\n    description: typeof p.description === 'string' ? p.description.slice(0, 100) : null,\n    variants: Array.isArray(p.variants) ? p.variants.map(v => ({\n      label: v.label, price: Number(v.price), stock: Number(v.stock || 0),\n      originalPrice: v.originalPrice == null ? null : Number(v.originalPrice),\n    })) : [],\n  };\n}\n\nlet products = [];\nif (detect.intent === 'search') {\n  const exact = body && body.exact ? compact(body.exact) : null;\n  const alts  = body && Array.isArray(body.alternatives) ? body.alternatives.map(compact).filter(Boolean) : [];\n  products = exact ? [exact, ...alts.slice(0, 2)] : alts.slice(0, 3);\n} else if (detect.intent === 'chat') {\n  products = [];\n} else {\n  const arr = Array.isArray(body) ? body : [];\n  products = arr.slice(0, 3).map(compact).filter(Boolean);\n}\n\n// Construir las cards finales (badge en MAYÚSCULAS para el frontend)\nconst BADGE_MAP = { new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO' };\nconst cards = products.map(p => ({\n  productId: p.productId,\n  variantLabel: null,\n  name: p.name,\n  image: p.image,\n  slug: p.slug,\n  unitPrice: p.basePrice,\n  originalPrice: p.originalPrice,\n  badge: BADGE_MAP[p.badge] || null,\n  stock: p.stock,\n  ctaLabel: 'Agregar al carrito',\n  ctaAction: 'addToCart',\n  productUrl: '/producto/' + p.slug,\n}));\n\n// Input para Compose Reply (qué le contamos al LLM)\nconst composeInput = {\n  userMessage: detect.message,\n  understanding: detect.understanding,\n  // Lista corta de los productos que se van a mostrar; el LLM puede mencionarlos\n  // por nombre si querés, pero ya están en las cards visualmente.\n  products: products.map(p => ({ name: p.name, slug: p.slug, price: p.basePrice, badge: p.badge })),\n};\n\nreturn [{\n  json: { ...detect, cards, composeInput }\n}];"
+        "jsCode": "// Toma el response del Supabase RPC, arma cards normalizadas y elige\n// una apertura ROTATIVA: las últimas 3 aperturas usadas por esa session\n// se excluyen del pool, garantizando variación al 100%.\nconst all = $input.all();\nconst wrapper = all[0] ? all[0].json : null;\nconst body = wrapper && Object.prototype.hasOwnProperty.call(wrapper, 'body') ? wrapper.body : wrapper;\nconst detect = $('Decide RPC').first().json;\n\nfunction compact(p) {\n  if (!p || !p.id) return null;\n  return {\n    productId: p.id, name: p.name, slug: p.slug,\n    basePrice: Number(p.basePrice),\n    originalPrice: p.originalPrice == null ? null : Number(p.originalPrice),\n    stock: Number(p.stock || 0),\n    badge: p.badge || null,\n    image: Array.isArray(p.images) && p.images[0] ? p.images[0] : '',\n    isFeatured: !!p.isFeatured,\n    variants: Array.isArray(p.variants) ? p.variants.map(v => ({\n      label: v.label, price: Number(v.price), stock: Number(v.stock || 0),\n      originalPrice: v.originalPrice == null ? null : Number(v.originalPrice),\n    })) : [],\n  };\n}\n\nlet products = [];\nif (detect.intent === 'search') {\n  const exact = body && body.exact ? compact(body.exact) : null;\n  const alts  = body && Array.isArray(body.alternatives) ? body.alternatives.map(compact).filter(Boolean) : [];\n  products = exact ? [exact, ...alts.slice(0, 2)] : alts.slice(0, 3);\n} else if (detect.intent === 'chat') {\n  products = [];\n} else {\n  const arr = Array.isArray(body) ? body : [];\n  products = arr.slice(0, 3).map(compact).filter(Boolean);\n}\n\nconst BADGE_MAP = { new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO' };\nconst cards = products.map(p => ({\n  productId: p.productId,\n  variantLabel: null,\n  name: p.name,\n  image: p.image,\n  slug: p.slug,\n  unitPrice: p.basePrice,\n  originalPrice: p.originalPrice,\n  badge: BADGE_MAP[p.badge] || null,\n  stock: p.stock,\n  ctaLabel: 'Agregar al carrito',\n  ctaAction: 'addToCart',\n  productUrl: '/producto/' + p.slug,\n}));\n\n// Rotación de aperturas vía staticData del workflow.\n// Pool: lista hardcoded. Excluimos las últimas 3 usadas en esa session.\nconst ALL_OPENINGS = [\"Este te va a copar 👌\",\"Mirá, te tiro uno que anda bárbaro\",\"Justo tenemos este, está saliendo bocha\",\"Encontré esto, es furor 🔥\",\"Tengo este re bueno\",\"Andá probando este, va a fondo\",\"Te traigo dos opciones bárbaras\",\"Este es uno de los que más vuelan\",\"Probá con este, no falla\",\"Hay este que es un golazo\",\"Cae bien este 👇\",\"Tenemos este de la línea premium\",\"Te dejo este, es de los mejores\",\"Este lo recomiendo siempre\",\"Andá con este que es lo más\"];\nconst sd = $getWorkflowStaticData('global');\nsd.openingHistory = sd.openingHistory || {};\nconst usedRecently = sd.openingHistory[detect.sessionId] || [];\nconst available = ALL_OPENINGS.filter(o => !usedRecently.includes(o));\nconst pool = available.length ? available : ALL_OPENINGS; // fallback si por algún motivo se agotó\nconst suggestedOpening = pool[Math.floor(Math.random() * pool.length)];\n\n// Persistimos la elección en staticData. El Assemble Final la confirmará\n// después de que el LLM efectivamente la use (igual la guardamos acá por\n// si el LLM falla; mejor evitar repetir aunque sea ya).\nconst nextHistory = [suggestedOpening, ...usedRecently].slice(0, 3);\nsd.openingHistory[detect.sessionId] = nextHistory;\n\nconst composeInput = {\n  userMessage: detect.message,\n  understanding: detect.understanding,\n  products: products.map(p => ({ name: p.name, slug: p.slug, price: p.basePrice, badge: p.badge })),\n  suggestedOpening,\n};\n\nreturn [{\n  json: { ...detect, cards, composeInput, suggestedOpening }\n}];"
       },
-      "id": "code-compose-context",
-      "name": "Compose Context",
+      "id": "code-build-compose",
+      "name": "Build Compose Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        620,
+        400,
         0
       ]
     },
@@ -234,7 +164,7 @@
         "promptType": "define",
         "text": "={{ JSON.stringify($json.composeInput) }}",
         "options": {
-          "systemMessage": "Sos el Vendedor Estrella de MK-Pets, tienda de mascotas en Buenos Aires. Cálido, argentino, copado. Hablás de vos.\n\nInput que te llega: { userMessage, understanding, products[] }.\n\nOUTPUT (SOLO este JSON, sin markdown):\n{\"reply\":\"<1-2 líneas naturales argentinas>\",\"suggestions\":[\"<resp1>\",\"<resp2>\"]}\n\n# Cómo responder\n\n## Si products tiene cards: arrancá CON VARIACIÓN OBLIGATORIA\nPROHIBIDO usar siempre la misma apertura. Cada turno, ELEGÍ AL AZAR (no la primera) una de estas opciones, y NO repitas la misma que usaste en el turno anterior si la podés ver en el historial:\n1. \"Este te va a copar 👌\"\n2. \"Mirá, te tiro uno que anda bárbaro\"\n3. \"Justo tenemos este, está saliendo bocha\"\n4. \"Encontré esto, es furor 🔥\"\n5. \"Tengo este re bueno\"\n6. \"Andá probando este, va a fondo\"\n7. \"Te traigo dos opciones bárbaras\"\n8. \"Este es uno de los que más vuelan\"\n9. \"Probá con este, no falla\"\n10. \"Hay este que es un golazo\"\n11. \"Cae bien este 👇\"\n12. \"Tenemos este de la línea premium\"\n13. \"Te dejo este, es de los mejores\"\n14. \"Este lo recomiendo siempre\"\n15. \"Andá con este que es lo más\"\n\nNUNCA uses \"Mirá, tengo esto que te puede venir\". Está PROHIBIDA esa frase, suena a chatbot.\n\nDespués de la apertura, una pregunta de cierre VARIABLE:\n- \"¿Te sirve?\"\n- \"¿Te lo agrego?\"\n- \"¿Va por ahí?\"\n- \"¿Para qué edad/talla?\"\n- \"¿Querés que te muestre otro?\"\n- \"¿Algo más?\"\n- \"¿Es para tu perro o para regalo?\"\n- \"¿Cuánto pesa?\"\n- \"¿Lo querés ahora?\"\n\nsuggestions = 2 respuestas POSIBLES del cliente a tu pregunta (no etiquetas genéricas):\n- Si preguntaste \"¿Te lo agrego?\" → [\"Sí, dale\",\"Mostrame otra opción\"]\n- Si preguntaste \"¿Cuánto pesa?\" → [\"Es chiquito\",\"Pesa más de 10kg\"]\n\n## Si products está VACÍO ([])\nNUNCA digas \"no hay\". Empatizá + pedí más data útil.\nVariaciones:\n- \"Uy, ese justo no me queda 😕 contame un poco más\"\n- \"Mmm, así no encuentro nada. ¿Es para perro o gato?\"\n- \"No te puedo asegurar eso. ¿Tenés algún producto en mente?\"\n\nsuggestions con guidance específica.\n\n## Si intent=\"chat\" (saludo, charla, off-topic)\nNO menciones productos.\n- Saludo: \"Re bien, acá pa' ayudarte 🐾 ¿qué necesitás?\" / \"Hola! ¿qué andás buscando?\" / \"Buenas! contame qué hay\"\n- Agradecimiento (\"gracias\"): \"De nada, cuando quieras 🐾\" / \"Dale, a las órdenes\" / \"Para eso estamos\"\n- Off-topic (\"que hora es\"): respondé corto/amable + redirigí a lo de la tienda: \"Andá a saber, igual contame qué buscás para tu mascota\"\n- Pregunta abierta (\"recomendas?\"): pedí contexto: \"Dale, contame qué mascota tenés y para qué\"\n\nsuggestions con disparadores REALES de catálogo: [\"Alimento perro\",\"Ver ofertas\",\"Algo para gato\",\"Snacks\",\"Juguetes\",\"Arena gato\",\"Shampoo\"].\n\n# Reglas DURAS\n- 1-2 líneas, NUNCA más. La card ya muestra nombre y precio.\n- NO repitas nombres de productos en el reply (excepto si querés enfatizar marca puntual, máximo 1 vez).\n- NO listes precios.\n- NO inventes productos que no están en \"products\".\n- NO uses \"Estimado\", \"Cordialmente\", \"Saludos cordiales\".\n- Emoji: máximo 1 por mensaje.\n- Si el cliente confirma compra (\"dale agregalo\", \"sí va\"), respondé \"Listo, te lo sumo al carrito 🛒. ¿Algo más?\".\n- Si ya pasaron varios turnos hablando del mismo producto, no vuelvas a preguntar lo mismo."
+          "systemMessage": "Sos el Vendedor Estrella de MK-Pets, tienda de mascotas en Buenos Aires. Cálido, argentino, copado. Hablás de vos.\n\nInput que te llega (JSON string): { userMessage, understanding, products[], suggestedOpening }.\n\nOUTPUT (SOLO este JSON, sin markdown):\n{\"reply\":\"<1-2 líneas naturales argentinas>\",\"suggestions\":[\"<resp1>\",\"<resp2>\"]}\n\n# Cómo responder\n\n## Si products tiene cards:\n1. ARRANCÁ tu reply con la frase EXACTA del campo suggestedOpening (o algo MUY parecido). No inventes una apertura diferente. Si suggestedOpening es null o vacío, usá una breve neutra.\n2. Después de la apertura, podés mencionar el producto con su nombre real si suma contexto (no obligatorio).\n3. Cerrá con UNA pregunta de vendedor (variable):\n   - \"¿Te sirve?\"\n   - \"¿Te lo agrego?\"\n   - \"¿Va por ahí?\"\n   - \"¿Para qué edad/talla?\"\n   - \"¿Querés que te muestre otro?\"\n   - \"¿Algo más?\"\n   - \"¿Cuánto pesa?\"\n   - \"¿Lo querés ahora?\"\n4. suggestions = 2 respuestas POSIBLES del cliente a tu pregunta (no etiquetas genéricas):\n   - \"¿Te lo agrego?\" → [\"Sí, dale\",\"Mostrame otra opción\"]\n   - \"¿Cuánto pesa?\" → [\"Es chiquito\",\"Pesa más de 10kg\"]\n   - \"¿Para qué edad?\" → [\"Cachorro\",\"Adulto\"]\n\n## Si products está VACÍO ([])\nNUNCA digas \"no hay\". Empatizá + pedí más data útil.\nVariá entre:\n- \"Uy, ese justo no me queda 😕 contame un poco más\"\n- \"Mmm, así no encuentro nada. ¿Es para perro o gato?\"\n- \"No te puedo asegurar eso. ¿Tenés algún producto en mente?\"\nsuggestions con disparadores específicos a la consulta.\n\n## Si understanding.intent === \"chat\" (saludo, charla, off-topic)\nNO menciones productos.\n- Saludo (\"hola\",\"todo bien?\"): variá entre \"Re bien, acá pa' ayudarte 🐾 ¿qué necesitás?\" / \"Hola! ¿qué andás buscando?\" / \"Buenas! contame qué hay\"\n- Agradecimiento (\"gracias\"): \"De nada, cuando quieras 🐾\" / \"Dale, a las órdenes\" / \"Para eso estamos\"\n- Off-topic (\"que hora es\",\"y el clima?\"): respondé corto/amable + redirigí: \"Andá a saber, igual contame qué buscás para tu mascota\"\n- Pregunta abierta (\"recomendas?\"): pedí contexto: \"Dale, contame qué mascota tenés y para qué\"\n- Confirma compra (\"si dale\",\"agregalo\"): \"Listo, te lo sumo al carrito 🛒. ¿Algo más?\"\nsuggestions con disparadores REALES de catálogo: [\"Alimento perro\",\"Ver ofertas\",\"Algo para gato\",\"Snacks\",\"Juguetes\",\"Arena gato\",\"Shampoo\"].\n\n# Reglas DURAS\n- 1-2 líneas. La card ya muestra nombre y precio.\n- NO repitas el nombre del producto más de UNA vez.\n- NO listes precios en el reply.\n- NO inventes productos que no están en \"products\".\n- NO uses \"Estimado\", \"Cordialmente\", \"Saludos cordiales\".\n- Emoji: máximo 1 por mensaje.\n- PROHIBIDO: \"Mirá, tengo esto que te puede venir 👇\" (es plantilla, suena a bot)."
         }
       },
       "id": "agent-compose",
@@ -242,35 +172,58 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.6,
       "position": [
-        840,
+        620,
         0
       ]
     },
     {
       "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.7,
+          "responseFormat": "json_object"
+        }
+      },
+      "id": "model-compose",
+      "name": "Groq Model Compose",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        620,
+        260
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "CYZbXLPJGbNDHfrX",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
         "sessionIdType": "customKey",
         "sessionKey": "={{ $('Webhook').item.json.body?.sessionId ?? 'anon' }}-compose",
-        "contextWindowLength": 8
+        "contextWindowLength": 6
       },
       "id": "memory-compose",
       "name": "Memory Compose",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.2,
       "position": [
-        960,
+        740,
         260
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Toma el reply conversacional del Compose Reply y lo une con las cards\n// que ya generamos en Compose Context. Output final del workflow.\nconst raw = $json.output ?? $json.text ?? $json;\nlet r;\ntry { r = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { r = {}; }\n\nfunction extractJson(input) {\n  if (typeof input !== 'string') return input;\n  let s = input.trim();\n  const tickRe = new RegExp('^' + String.fromCharCode(96).repeat(3) + '(?:json)?\\\\s*([\\\\s\\\\S]*?)\\\\s*' + String.fromCharCode(96).repeat(3) + '\\\\s*$', 'i');\n  const m = s.match(tickRe);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (_) {}\n  const start = s.indexOf('{');\n  if (start === -1) return null;\n  let depth = 0, inStr = false, esc = false;\n  for (let i = start; i < s.length; i++) {\n    const c = s[i];\n    if (esc) { esc = false; continue; }\n    if (c === '\\\\') { esc = true; continue; }\n    if (c === '\"') inStr = !inStr;\n    if (inStr) continue;\n    if (c === '{') depth++;\n    else if (c === '}') {\n      depth--;\n      if (depth === 0) { try { return JSON.parse(s.slice(start, i + 1)); } catch (_) { return null; } }\n    }\n  }\n  return null;\n}\n\nr = (typeof r === 'string' ? extractJson(r) : r) || {};\nconst ctx = $('Compose Context').first().json;\n\nconst reply = (typeof r.reply === 'string' && r.reply.trim())\n  ? r.reply.trim()\n  : '¿Querés que te muestre algo en particular? 🐾';\nconst suggestions = Array.isArray(r.suggestions)\n  ? r.suggestions.filter(s => typeof s === 'string' && s.trim()).slice(0, 3)\n  : [];\n\nreturn [{\n  json: {\n    reply,\n    cards: Array.isArray(ctx.cards) ? ctx.cards : [],\n    suggestions,\n    _meta: {\n      intent: ctx.intent,\n      category_slug: ctx.categorySlug,\n      reasoning: ctx.understanding && ctx.understanding.reasoning,\n    }\n  }\n}];"
+        "jsCode": "const raw = $json.output ?? $json.text ?? $json;\n\nfunction extractJson(input) {\n  if (typeof input !== 'string') return input;\n  let s = input.trim();\n  const tickRe = new RegExp('^' + String.fromCharCode(96).repeat(3) + '(?:json)?\\\\s*([\\\\s\\\\S]*?)\\\\s*' + String.fromCharCode(96).repeat(3) + '\\\\s*$', 'i');\n  const m = s.match(tickRe);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (_) {}\n  const start = s.indexOf('{');\n  if (start === -1) return null;\n  let depth = 0, inStr = false, esc = false;\n  for (let i = start; i < s.length; i++) {\n    const c = s[i];\n    if (esc) { esc = false; continue; }\n    if (c === '\\\\') { esc = true; continue; }\n    if (c === '\"') inStr = !inStr;\n    if (inStr) continue;\n    if (c === '{') depth++;\n    else if (c === '}') {\n      depth--;\n      if (depth === 0) { try { return JSON.parse(s.slice(start, i + 1)); } catch (_) { return null; } }\n    }\n  }\n  return null;\n}\n\nlet r = (typeof raw === 'string' ? extractJson(raw) : raw) || {};\nif (typeof r === 'string') r = extractJson(r) || {};\nconst ctx = $('Build Compose Input').first().json;\n\nlet reply = (typeof r.reply === 'string' && r.reply.trim())\n  ? r.reply.trim()\n  : '¿Querés que te muestre algo en particular? 🐾';\n\n// Sanity check: si el LLM ignoró la apertura sugerida y empezó con\n// 'Mirá, tengo esto que te puede venir' (frase prohibida), reescribimos.\nconst FORBIDDEN = /^[¡]?[mM]ir[aá],?\\s+tengo esto/;\nif (FORBIDDEN.test(reply) && ctx.suggestedOpening && Array.isArray(ctx.cards) && ctx.cards.length) {\n  reply = ctx.suggestedOpening + '. ¿Te sirve?';\n}\n\nconst suggestions = Array.isArray(r.suggestions)\n  ? r.suggestions.filter(s => typeof s === 'string' && s.trim()).slice(0, 3)\n  : [];\n\nreturn [{\n  json: {\n    reply,\n    cards: Array.isArray(ctx.cards) ? ctx.cards : [],\n    suggestions,\n    _meta: {\n      intent: ctx.intent,\n      category_slug: ctx.categorySlug,\n      reasoning: ctx.understanding && ctx.understanding.reasoning,\n      suggestedOpening: ctx.suggestedOpening,\n    }\n  }\n}];"
       },
       "id": "code-assemble",
       "name": "Assemble Final",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1080,
+        860,
         0
       ]
     },
@@ -285,24 +238,13 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1300,
+        1080,
         0
       ]
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Get Catalog",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Catalog": {
       "main": [
         [
           {
@@ -346,17 +288,6 @@
         ]
       ]
     },
-    "Groq Model Compose": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent Compose Reply",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Memory Understand": {
       "ai_memory": [
         [
@@ -383,14 +314,14 @@
       "main": [
         [
           {
-            "node": "Compose Context",
+            "node": "Build Compose Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Compose Context": {
+    "Build Compose Input": {
       "main": [
         [
           {
@@ -407,6 +338,17 @@
           {
             "node": "Assemble Final",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Model Compose": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Compose Reply",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]
