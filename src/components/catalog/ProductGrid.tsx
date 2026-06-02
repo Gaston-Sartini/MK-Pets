@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useCartStore } from '@/store/cart-store'
 import { useToastStore } from '@/store/toast-store'
-import { formatPrice, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { PriceDisplay } from './PriceDisplay'
 import type { Product, ProductVariant } from '@/types'
 
 const BADGE_LABEL: Record<string, string> = {
@@ -19,7 +20,8 @@ function ProductCard({ product }: { product: Product }) {
   const { addItem, openDrawer } = useCartStore()
   const { addToast }            = useToastStore()
 
-  const displayPrice = selected?.price ?? product.basePrice
+  const displayPrice    = selected?.price         ?? product.basePrice
+  const displayOriginal = selected?.originalPrice ?? product.originalPrice
 
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -86,9 +88,7 @@ function ProductCard({ product }: { product: Product }) {
           </div>
         )}
 
-        <p className="font-display font-black text-xl text-mk-orange">
-          {formatPrice(displayPrice)}
-        </p>
+        <PriceDisplay currentPrice={displayPrice} originalPrice={displayOriginal} size="sm" />
 
         <button
           onClick={handleAdd}

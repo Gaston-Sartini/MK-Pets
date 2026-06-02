@@ -11,6 +11,16 @@ export function formatPrice(amount: number | string): string {
   return `$${n.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
 }
 
+/**
+ * Returns the discount percentage off, rounded down (e.g. 22%).
+ * Returns null if the discount is not meaningful (< 1%, or original isn't strictly greater).
+ */
+export function discountPercent(currentPrice: number, originalPrice: number | null): number | null {
+  if (originalPrice == null || originalPrice <= currentPrice || currentPrice <= 0) return null
+  const off = Math.floor(((originalPrice - currentPrice) / originalPrice) * 100)
+  return off >= 1 ? off : null
+}
+
 /** Genera número de pedido único: MKP-20260514-4821 */
 export function generateOrderNumber(): string {
   const date  = new Date().toISOString().slice(0, 10).replace(/-/g, '')

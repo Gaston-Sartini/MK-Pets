@@ -15,24 +15,37 @@ export default function AdminLoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
+    console.log('[admin-login] submit start', { email })
 
     try {
       const res = await fetch('/api/admin/login', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email, password }),
+        method:      'POST',
+        credentials: 'same-origin',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({ email, password }),
       })
 
+      console.log('[admin-login] response status:', res.status)
+
       if (!res.ok) {
-        const data = await res.json()
-        setError(data.error ?? 'Error al iniciar sesión')
+        let msg = 'Error al iniciar sesión'
+        try {
+          const data = await res.json()
+          msg = data.error ?? msg
+        } catch {
+          // body was not JSON
+        }
+        console.warn('[admin-login] login failed:', msg)
+        setError(msg)
         return
       }
 
+      console.log('[admin-login] login OK, redirecting to /admin')
       router.push('/admin')
       router.refresh()
-    } catch {
-      setError('Error de conexión')
+    } catch (err) {
+      console.error('[admin-login] fetch error:', err)
+      setError('Error de conexión — abrí DevTools (F12) y revisá la consola')
     } finally {
       setLoading(false)
     }

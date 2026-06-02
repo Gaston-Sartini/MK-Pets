@@ -9,27 +9,29 @@ export const dynamic = 'force-dynamic'
 export default async function EditarProductoPage({ params }: { params: { id: string } }) {
   const { data: p } = await supabase
     .from('Product')
-    .select('*, variants:ProductVariant(id, label, price, stock)')
+    .select('*, variants:ProductVariant(id, label, price, originalPrice, stock)')
     .eq('id', params.id)
     .single()
 
   if (!p) notFound()
 
   const initial = {
-    name:        p.name,
-    slug:        p.slug,
-    description: p.description ?? '',
-    categoryId:  p.categoryId,
-    basePrice:   String(p.basePrice),
-    stock:       String(p.stock),
-    badge:       p.badge ?? '',
-    isActive:    p.isActive,
-    isFeatured:  p.isFeatured,
-    images:      p.images ?? [],
-    variants:    (p.variants ?? []).map((v: any) => ({
-      label: v.label,
-      price: String(v.price),
-      stock: String(v.stock),
+    name:          p.name,
+    slug:          p.slug,
+    description:   p.description ?? '',
+    categoryId:    p.categoryId,
+    basePrice:     String(p.basePrice),
+    originalPrice: p.originalPrice == null ? '' : String(p.originalPrice),
+    stock:         String(p.stock),
+    badge:         p.badge ?? '',
+    isActive:      p.isActive,
+    isFeatured:    p.isFeatured,
+    images:        p.images ?? [],
+    variants:      (p.variants ?? []).map((v: any) => ({
+      label:         v.label,
+      price:         String(v.price),
+      originalPrice: v.originalPrice == null ? '' : String(v.originalPrice),
+      stock:         String(v.stock),
     })),
   }
 

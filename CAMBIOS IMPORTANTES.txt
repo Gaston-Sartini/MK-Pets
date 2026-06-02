@@ -1,0 +1,39 @@
+======================================================
+  CAMBIOS IMPORTANTES - MK-Pets
+  Fecha: 2026-06-01
+======================================================
+
+[PENDIENTE] SEGURIDAD - Row Level Security (RLS) desactivado en Supabase
+---------------------------------------------------------------------------
+Las siguientes tablas de la base de datos (proyecto: mk-pets / ctttonxivmozsqegzotb)
+tienen RLS completamente DESACTIVADO:
+
+  - public.Product
+  - public.Category
+  - public.ProductVariant
+  - public.Order
+  - public.OrderItem
+
+RIESGO: Cualquier persona con la anon key puede leer o modificar TODOS los datos.
+
+ACCION REQUERIDA:
+  Activar RLS en cada tabla y definir las políticas de acceso adecuadas.
+  El SQL base para activarlo es:
+
+    ALTER TABLE public.Category ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.Product ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.ProductVariant ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.Order ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.OrderItem ENABLE ROW LEVEL SECURITY;
+
+  IMPORTANTE: No activar RLS sin agregar políticas primero, ya que bloquearía
+  todo acceso a las tablas. Definir políticas según roles (anon, authenticated, admin)
+  antes de habilitar.
+
+  Referencia: https://supabase.com/docs/guides/database/postgres/row-level-security
+
+----------------------------------------------------------------------
+[INFO] Productos renombrados el 2026-06-01
+  Se prefijó "Example - " a los 12 productos existentes en la tabla Product.
+  Esto fue intencional para marcarlos como datos de ejemplo/demo.
+======================================================

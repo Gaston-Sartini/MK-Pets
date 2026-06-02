@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useCartStore } from '@/store/cart-store'
 import { useToastStore } from '@/store/toast-store'
-import { formatPrice } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { PriceDisplay } from './PriceDisplay'
 import type { Product, ProductVariant } from '@/types'
 
 interface Props { product: Product }
@@ -16,7 +16,8 @@ export function AddToCartButton({ product }: Props) {
   const { addItem, openDrawer } = useCartStore()
   const { addToast }            = useToastStore()
 
-  const displayPrice = selected?.price ?? product.basePrice
+  const displayPrice    = selected?.price         ?? product.basePrice
+  const displayOriginal = selected?.originalPrice ?? product.originalPrice
 
   const handleAdd = () => {
     addItem({
@@ -60,9 +61,7 @@ export function AddToCartButton({ product }: Props) {
       )}
 
       {/* PRECIO */}
-      <p className="font-display font-black text-4xl text-mk-orange">
-        {formatPrice(displayPrice)}
-      </p>
+      <PriceDisplay currentPrice={displayPrice} originalPrice={displayOriginal} size="lg" />
 
       {/* BOTÓN */}
       <button onClick={handleAdd} className="btn-primary w-full text-lg py-4">

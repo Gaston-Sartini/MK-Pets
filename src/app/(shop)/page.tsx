@@ -10,6 +10,7 @@ import { JsonLd } from '@/components/seo/JsonLd'
 import {
   getFeaturedProducts,
   getProductsByCategory,
+  getCategories,
 } from '@/lib/queries'
 
 // Cache home page for 5 minutes — balances freshness vs. DB load
@@ -49,28 +50,29 @@ const websiteSchema = {
   },
 }
 
-const SECTIONS = [
-  { slug: 'gatos',  label: 'Línea Gatos',  emoji: '🐱' },
-  { slug: 'perros', label: 'Línea Perros',  emoji: '🐶' },
-  { slug: 'snacks', label: 'Snacks',        emoji: '🍬' },
-  { slug: 'higiene',label: 'Higiene',       emoji: '🧴' },
-]
+// Maximum number of category sections to render on the home page.
+// Keeps the page reasonable when there are many categories in the DB.
+const MAX_HOME_SECTIONS = 4
 
 export default async function HomePage() {
+  // Load categories first — they drive which sections to render.
+  const categories = await getCategories().catch(() => [])
+  const sectionCats = categories.slice(0, MAX_HOME_SECTIONS)
+
   let featured: Awaited<ReturnType<typeof getFeaturedProducts>> = []
-  let sections: Awaited<ReturnType<typeof getProductsByCategory>>[] = SECTIONS.map(() => [])
+  let sections: Awaited<ReturnType<typeof getProductsByCategory>>[] =
+    sectionCats.map(() => [])
 
   try {
     const results = await Promise.all([
       getFeaturedProducts(),
-      ...SECTIONS.map(s => getProductsByCategory(s.slug)),
+      ...sectionCats.map(s => getProductsByCategory(s.slug)),
     ])
     const [featuredData, ...sectionData] = results
     featured = featuredData
     sections = sectionData
   } catch (err) {
-    // Log real error — antes lo tragábamos en silencio y el sitio
-    // se quedaba con productos vacíos sin pista del fallo en logs.
+    // Log real error so silent failures don't hide DB issues.
     console.error('[home] Error cargando productos:', err)
   }
 
@@ -82,7 +84,7 @@ export default async function HomePage() {
       {/* CATEGORÍAS */}
       <section aria-label="Categorías" className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">
         <Suspense fallback={null}>
-          <CategoryChips />
+          <CategoryChips categories={categories} />
         </Suspense>
       </section>
 
@@ -101,8 +103,8 @@ export default async function HomePage() {
 
       <ShippingBanner />
 
-      {/* SECCIONES POR CATEGORÍA */}
-      {SECTIONS.map((section, i) => (
+      {/* SECCIONES POR CATEGORÍA (dinámicas, leídas de la DB) */}
+      {sectionCats.map((section, i) => (
         <section
           key={section.slug}
           aria-labelledby={`section-${section.slug}`}
@@ -110,7 +112,7 @@ export default async function HomePage() {
         >
           <div className="flex items-center justify-between mb-4">
             <h2 id={`section-${section.slug}`} className="section-title">
-              {section.emoji} {section.label}
+              {section.emoji ?? '🐾'} {section.name}
             </h2>
             <a
               href={`/productos?cat=${section.slug}`}

@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { getProductBySlug, getRelatedProducts, getActiveProductSlugs } from '@/lib/queries'
-import { Navbar } from '@/components/layout/Navbar'
+// Navbar comes from (shop)/layout.tsx — importing it here would render it twice.
 import { Footer } from '@/components/layout/Footer'
 import { AddToCartButton } from '@/components/catalog/AddToCartButton'
 import { JsonLd } from '@/components/seo/JsonLd'
@@ -153,7 +153,6 @@ export default async function ProductoPage({ params }: PageProps) {
     <>
       <JsonLd data={productSchema} />
       <JsonLd data={breadcrumbSchema} />
-      <Navbar />
       <main className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">
 
         {/* BREADCRUMB */}

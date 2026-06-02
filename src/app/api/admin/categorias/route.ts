@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/admin-auth'
 import { supabase } from '@/lib/supabase'
+
+/** Invalidate every public page that lists or filters by category. */
+function revalidatePublicShop() {
+  revalidatePath('/', 'layout')
+}
 
 export async function GET() {
   const { data, error } = await supabase
@@ -28,5 +34,6 @@ export async function POST(req: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  revalidatePublicShop()
   return NextResponse.json({ id: data.id })
 }

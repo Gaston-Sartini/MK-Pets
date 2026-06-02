@@ -92,7 +92,7 @@ export default async function ProductosPage({ searchParams }: PageProps) {
         {/* CHIPS CATEGORÍAS */}
         <nav aria-label="Filtrar por categoría" className="mb-6">
           <Suspense fallback={null}>
-            <CategoryChips />
+            <CategoryChips categories={categories} />
           </Suspense>
         </nav>
 

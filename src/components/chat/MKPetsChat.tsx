@@ -217,9 +217,11 @@ export default function MKPetsChat() {
           'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-mk-orange/40',
         )}
       >
-        <span className="text-2xl text-white" aria-hidden>
-          {isOpen ? '×' : '🐾'}
-        </span>
+        {isOpen ? (
+          <span className="text-2xl text-white" aria-hidden>×</span>
+        ) : (
+          <span className="text-2xl text-white" aria-hidden>🐾</span>
+        )}
         {!isOpen && hasUnread && (
           <span className="absolute -top-1 -right-1 w-3 h-3 bg-mk-error rounded-full ring-2 ring-white animate-bounce-badge" />
         )}

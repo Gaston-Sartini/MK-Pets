@@ -3,22 +3,31 @@ import type { Product } from '@/types'
 
 // Supabase select for product cards (no description)
 const PRODUCT_CARD_SELECT =
-  'id, name, slug, images, basePrice, badge, isFeatured, stock, ' +
+  'id, name, slug, images, basePrice, originalPrice, badge, isFeatured, stock, ' +
   'category:Category ( id, name, slug, emoji ), ' +
-  'variants:ProductVariant ( id, label, price, stock )'
+  'variants:ProductVariant ( id, label, price, originalPrice, stock )'
 
 // Supabase select for product detail page (adds description)
 const PRODUCT_DETAIL_SELECT = PRODUCT_CARD_SELECT + ', description'
+
+/** Parse a Supabase numeric (returned as string) → number | null. */
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return Number.isFinite(n) ? n : null
+}
 
 function serializeProduct(p: any): Product {
   return {
     ...p,
     description: p.description ?? null,
-    basePrice: parseFloat(p.basePrice),
+    basePrice: num(p.basePrice) ?? 0,
+    originalPrice: num(p.originalPrice),
     badge: (p.badge as Product['badge']) ?? null,
     variants: (p.variants ?? []).map((v: any) => ({
       ...v,
-      price: parseFloat(v.price),
+      price: num(v.price) ?? 0,
+      originalPrice: num(v.originalPrice),
     })),
   }
 }
