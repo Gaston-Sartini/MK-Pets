@@ -5,11 +5,17 @@ import type { Metadata } from 'next'
 import { getOrderByNumber } from '@/lib/queries'
 import { canModifyOrder, formatPrice } from '@/lib/utils'
 import { OrderNumberDisplay } from '@/components/checkout/OrderNumberDisplay'
+import { PayWithMpButton } from '@/components/checkout/PayWithMpButton'
+import { syncMpPayment } from '@/lib/mp-payments'
+import { SHOP_TIMEZONE, whatsappLink } from '@/lib/shop'
 
 interface Props {
   params:      { numero: string }
-  searchParams: { mp?: string }
+  searchParams: { mp?: string; payment_id?: string }
 }
+
+// Siempre el estado real del pedido: nunca una versión cacheada.
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
@@ -25,18 +31,36 @@ const STATUS_LABEL: Record<string, { label: string; color: string; icon: string 
   PENDING:    { label: 'Pendiente',      color: 'text-yellow-700 bg-yellow-50 border-yellow-200', icon: '⏳' },
   CONFIRMED:  { label: 'Confirmado',     color: 'text-blue-700 bg-blue-50 border-blue-200',       icon: '✅' },
   PREPARING:  { label: 'En preparación', color: 'text-purple-700 bg-purple-50 border-purple-200', icon: '📦' },
-  DELIVERING: { label: 'En camino',      color: 'text-mk-orange bg-mk-orange-light border-mk-orange/30', icon: '🚚' },
+  SHIPPED:    { label: 'En camino',      color: 'text-mk-orange bg-mk-orange-light border-mk-orange/30', icon: '🚚' },
   DELIVERED:  { label: 'Entregado',      color: 'text-mk-green bg-mk-green-pale border-green-200', icon: '🎉' },
   CANCELLED:  { label: 'Cancelado',      color: 'text-red-700 bg-red-50 border-red-200',          icon: '❌' },
 }
 
 export default async function OrderPage({ params, searchParams }: Props) {
+  // Al volver de MercadoPago sincronizamos el pago contra su API en el momento,
+  // sin depender de que el webhook ya haya llegado.
+  if (searchParams.mp && searchParams.payment_id) {
+    await syncMpPayment(searchParams.payment_id).catch(() => null)
+  }
+
   const order = await getOrderByNumber(params.numero)
   if (!order) notFound()
 
-  const mpState    = searchParams.mp
-  const canModify  = canModifyOrder(order.canModifyUntil)
-  const statusInfo = STATUS_LABEL[order.status] ?? STATUS_LABEL.PENDING
+  const isMp       = order.paymentMethod === 'MERCADOPAGO'
+  const isPaid     = order.paymentStatus === 'APPROVED'
+  const isOpen     = !['CANCELLED', 'DELIVERED'].includes(order.status)
+  const awaitingMp = isMp && !isPaid && isOpen
+  // El banner sale del estado real del pago, no del parámetro de la URL
+  // (que cualquiera puede escribir a mano).
+  const mpState    = !searchParams.mp ? null
+    : isPaid ? 'success'
+    : searchParams.mp === 'success' || searchParams.mp === 'pending' ? 'pending'
+    : 'error'
+  const canModify  = canModifyOrder(order.canModifyUntil) && !isPaid
+    && ['PENDING', 'CONFIRMED'].includes(order.status)
+  const statusInfo = awaitingMp
+    ? { label: 'Esperando el pago', color: 'text-yellow-700 bg-yellow-50 border-yellow-200', icon: '⏳' }
+    : STATUS_LABEL[order.status] ?? STATUS_LABEL.PENDING
 
   return (
     <main className="min-h-screen bg-mk-light py-8 px-4">
@@ -54,6 +78,12 @@ export default async function OrderPage({ params, searchParams }: Props) {
             <p className="text-sm text-mk-mid mt-1">MercadoPago está procesando tu pago. Actualizaremos tu pedido en breve.</p>
           </div>
         )}
+        {mpState === 'error' && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-card p-4 text-center">
+            <p className="text-red-700 font-bold text-lg">No se completó el pago</p>
+            <p className="text-sm text-mk-mid mt-1">Tu pedido quedó guardado. Podés reintentar el pago acá abajo.</p>
+          </div>
+        )}
 
         {/* Order number */}
         <OrderNumberDisplay orderNumber={order.orderNumber} />
@@ -63,8 +93,11 @@ export default async function OrderPage({ params, searchParams }: Props) {
           <span className="text-2xl">{statusInfo.icon}</span>
           <div>
             <p className="font-bold">{statusInfo.label}</p>
-            {order.paymentMethod === 'CASH_ON_DELIVERY' && (
-              <p className="text-xs opacity-80">Pagarás al recibir tu pedido</p>
+            {order.paymentMethod === 'CASH_ON_DELIVERY' && isOpen && (
+              <p className="text-xs opacity-80">Pagás en efectivo o por transferencia al recibir tu pedido</p>
+            )}
+            {awaitingMp && (
+              <p className="text-xs opacity-80">Reservamos tus productos por 90 minutos</p>
             )}
           </div>
         </div>
@@ -119,7 +152,7 @@ export default async function OrderPage({ params, searchParams }: Props) {
                   <p className="text-xs text-mk-mid">x{item.quantity}</p>
                 </div>
                 <p className="font-bold text-sm text-mk-dark flex-shrink-0">
-                  ${formatPrice(item.unitPrice * item.quantity)}
+                  {formatPrice(item.unitPrice * item.quantity)}
                 </p>
               </li>
             ))}
@@ -127,13 +160,24 @@ export default async function OrderPage({ params, searchParams }: Props) {
 
           <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between">
             <span className="font-semibold text-mk-dark">Total</span>
-            <span className="font-bold text-xl text-mk-orange">${formatPrice(order.total)}</span>
+            <span className="font-bold text-xl text-mk-orange">{formatPrice(order.total)}</span>
           </div>
         </div>
 
         {/* Actions */}
         <div className="mt-6 flex flex-col gap-3">
-          {canModify && !['PREPARING', 'DELIVERING', 'DELIVERED', 'CANCELLED'].includes(order.status) && (
+          {awaitingMp && <PayWithMpButton orderNumber={order.orderNumber} />}
+          {isOpen && (
+            <a
+              href={whatsappLink(`Hola! Hice el pedido ${order.orderNumber} en la web.`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary text-center"
+            >
+              💬 Escribinos por WhatsApp
+            </a>
+          )}
+          {canModify && (
             <Link
               href={`/pedido/${order.orderNumber}/modificar`}
               className="btn-secondary text-center"
@@ -149,7 +193,7 @@ export default async function OrderPage({ params, searchParams }: Props) {
         {canModify && (
           <p className="text-center text-xs text-mk-mid mt-3">
             Podés modificar tu pedido hasta las{' '}
-            {new Date(order.canModifyUntil).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+            {order.canModifyUntil.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: SHOP_TIMEZONE })}
           </p>
         )}
       </div>

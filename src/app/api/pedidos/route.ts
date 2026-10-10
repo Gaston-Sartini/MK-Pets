@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { generateOrderNumber } from '@/lib/utils'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { notifyOrderWhatsApp } from '@/lib/whatsapp'
+import { logger } from '@/lib/logger'
+import { takeStock } from '@/lib/stock'
 
 const createOrderSchema = z.object({
   paymentMethod: z.enum(['MERCADOPAGO', 'CASH_ON_DELIVERY']),
@@ -18,9 +21,16 @@ const createOrderSchema = z.object({
   })).min(1).max(50),
 })
 
+class StockError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StockError'
+  }
+}
+
 export async function POST(request: Request) {
   // 10 orders per IP per 10 minutes — prevents order flooding
-  const rl = rateLimit(getClientIp(request), { limit: 10, windowMs: 10 * 60 * 1000 })
+  const rl = rateLimit(`order:${getClientIp(request)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Demasiadas solicitudes. Intentá en unos minutos.' },
@@ -50,24 +60,31 @@ export async function POST(request: Request) {
       where:  { id: { in: productIds }, isActive: true },
       select: {
         id:        true,
+        name:      true,
         basePrice: true,
-        variants:  { select: { label: true, price: true } },
+        stock:     true,
+        variants:  { select: { label: true, price: true, stock: true } },
       },
     })
 
-    // Build price map: "productId" or "productId:variantLabel" → price
+    // Build price, name and stock maps: "productId" or "productId:variantLabel" → value
     const priceMap = new Map<string, number>()
+    const nameMap  = new Map<string, string>()
+    const stockMap = new Map<string, number>()
     for (const p of dbProducts) {
+      nameMap.set(p.id, p.name)
       if (p.variants.length > 0) {
         for (const v of p.variants) {
           priceMap.set(`${p.id}:${v.label}`, Number(v.price))
+          stockMap.set(`${p.id}:${v.label}`, v.stock)
         }
       } else {
         priceMap.set(p.id, Number(p.basePrice))
+        stockMap.set(p.id, p.stock)
       }
     }
 
-    // Validate every item exists and is purchasable
+    // Validate every item exists, is purchasable, and has sufficient stock
     const resolvedItems: { productId: string; variantLabel?: string; quantity: number; unitPrice: number }[] = []
     for (const item of items) {
       const key = item.variantLabel
@@ -77,10 +94,22 @@ export async function POST(request: Request) {
       const unitPrice = priceMap.get(key)
       if (unitPrice === undefined) {
         return NextResponse.json(
-          { error: `Producto no disponible: ${item.productId}` },
+          { error: 'Uno de los productos del carrito ya no está disponible. Actualizá el carrito e intentá de nuevo.' },
           { status: 422 }
         )
       }
+
+      // Early stock check for UX — definitive check is atomic inside the transaction below
+      const availableStock = stockMap.get(key) ?? 0
+      if (availableStock < item.quantity) {
+        const productName = nameMap.get(item.productId) ?? item.productId
+        const variant     = item.variantLabel ? ` (${item.variantLabel})` : ''
+        return NextResponse.json(
+          { error: `Stock insuficiente para "${productName}"${variant}. Disponible: ${availableStock}` },
+          { status: 422 }
+        )
+      }
+
       resolvedItems.push({ ...item, unitPrice })
     }
 
@@ -88,28 +117,63 @@ export async function POST(request: Request) {
     const orderNumber    = generateOrderNumber()
     const canModifyUntil = new Date(Date.now() + 30 * 60 * 1000)
 
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        paymentMethod,
-        customerName,
-        address,
-        phone,
-        notes,
-        total,
-        canModifyUntil,
-        status:        paymentMethod === 'CASH_ON_DELIVERY' ? 'CONFIRMED' : 'PENDING',
-        paymentStatus: 'PENDING',
-        items: {
-          create: resolvedItems.map(i => ({
-            productId:    i.productId,
-            variantLabel: i.variantLabel ?? null,
-            quantity:     i.quantity,
-            unitPrice:    i.unitPrice,
-          })),
+    // Atomic: decrement stock and create order in a single transaction.
+    // Uses updateMany with `stock >= quantity` in the WHERE clause so the
+    // check and decrement are one DB operation — safe under concurrent orders.
+    const order = await prisma.$transaction(async (tx) => {
+      for (const item of resolvedItems) {
+        const ok = await takeStock(tx, {
+          productId:    item.productId,
+          variantLabel: item.variantLabel ?? null,
+          quantity:     item.quantity,
+        })
+        if (!ok) {
+          const variant = item.variantLabel ? ` (${item.variantLabel})` : ''
+          throw new StockError(`Stock insuficiente para "${nameMap.get(item.productId)}"${variant}`)
+        }
+      }
+
+      return tx.order.create({
+        data: {
+          orderNumber,
+          paymentMethod,
+          customerName,
+          address,
+          phone,
+          notes,
+          total,
+          canModifyUntil,
+          status:        paymentMethod === 'CASH_ON_DELIVERY' ? 'CONFIRMED' : 'PENDING',
+          paymentStatus: 'PENDING',
+          items: {
+            create: resolvedItems.map(i => ({
+              productId:    i.productId,
+              variantLabel: i.variantLabel ?? null,
+              quantity:     i.quantity,
+              unitPrice:    i.unitPrice,
+            })),
+          },
         },
-      },
-      select: { orderNumber: true, status: true, total: true },
+        select: { orderNumber: true, status: true, total: true },
+      })
+    })
+
+    // Notify for all orders immediately — MP orders use isPendingPayment: true
+    // so n8n can send a "waiting for payment" message instead of a confirmation.
+    await notifyOrderWhatsApp({
+      orderNumber,
+      customerName,
+      phone,
+      total,
+      notes,
+      paymentMethod,
+      isPendingPayment: paymentMethod === 'MERCADOPAGO',
+      items: resolvedItems.map(i => ({
+        name:         nameMap.get(i.productId) ?? 'Producto',
+        variantLabel: i.variantLabel,
+        quantity:     i.quantity,
+        unitPrice:    i.unitPrice,
+      })),
     })
 
     return NextResponse.json({
@@ -118,7 +182,11 @@ export async function POST(request: Request) {
       total:       Number(order.total),
     }, { status: 201 })
 
-  } catch {
+  } catch (err) {
+    if (err instanceof StockError) {
+      return NextResponse.json({ error: err.message }, { status: 422 })
+    }
+    logger.error('Error creating order', { error: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'Error al crear el pedido' }, { status: 500 })
   }
 }

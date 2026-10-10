@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
-import { supabase } from '@/lib/supabase'
 
 export async function GET() {
-  const auth = requireAdmin()
-  if (auth) return auth.error
+  const auth = await requireAdmin()
+  if (auth.error) return auth.error
+  const { supabase } = auth
 
   const { data, error } = await supabase
     .from('Order')
-    .select('id, orderNumber, customerName, phone, total, status, paymentStatus, createdAt, items:OrderItem(id)')
+    .select('id, orderNumber, customerName, phone, address, notes, total, status, paymentMethod, paymentStatus, createdAt, ' +
+      'items:OrderItem(id, quantity, unitPrice, variantLabel, product:Product(name))')
     .order('createdAt', { ascending: false })
+    .limit(200)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data ?? [])

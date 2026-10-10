@@ -17,8 +17,8 @@ const OPTIONS: { id: PaymentMethod; icon: string; title: string; subtitle: strin
   {
     id:       'CASH_ON_DELIVERY',
     icon:     '🤝',
-    title:    'Pagar al recibir',
-    subtitle: 'Efectivo o transferencia cuando llega tu pedido',
+    title:    'Efectivo o transferencia',
+    subtitle: 'Pagás en efectivo o por transferencia al recibir',
   },
 ]
 

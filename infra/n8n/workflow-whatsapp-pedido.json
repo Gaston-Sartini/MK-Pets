@@ -1,0 +1,64 @@
+{
+  "name": "MK-Pets · WhatsApp Notificación Pedido",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mkpets-pedido",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Recibir Pedido",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "mkpets-pedido"
+    },
+    {
+      "parameters": {
+        "jsCode": "// El sitio manda el pedido y el mensaje ya armado (src/lib/whatsapp.ts →\n// buildOrderMessage). Acá solo se valida el origen y se reenvía a Evolution.\nconst input = $input.first().json;\nconst d = input.body ?? input;\n\n// Solo el sitio conoce este secreto (N8N_WEBHOOK_SECRET en el sitio,\n// MKPETS_WEBHOOK_SECRET en n8n). Sin esto, cualquiera que descubra la URL del\n// webhook podría mandar WhatsApps desde el número de la tienda.\nconst expected = $env.MKPETS_WEBHOOK_SECRET;\nconst received = (input.headers || {})['x-mkpets-secret'];\nif (expected && received !== expected) {\n  return [];\n}\n\nif (!d.phone || !d.message) {\n  return [];\n}\n\nreturn [{ json: { phone: String(d.phone), message: String(d.message) } }];"
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Validar y Preparar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.EVOLUTION_API_URL || 'http://host.docker.internal:8085') + '/message/sendText/' + ($env.EVOLUTION_INSTANCE || 'mi-bot') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.EVOLUTION_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.phone, text: $json.message }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 300]
+    }
+  ],
+  "connections": {
+    "Recibir Pedido": {
+      "main": [[{ "node": "Validar y Preparar", "type": "main", "index": 0 }]]
+    },
+    "Validar y Preparar": {
+      "main": [[{ "node": "Enviar WhatsApp", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {}
+}

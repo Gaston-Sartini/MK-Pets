@@ -2,7 +2,7 @@
 
 /**
  * MK-Pets Chat — burbuja flotante propia.
- * Reemplaza al embed de Typebot. Llama directo a /api/chat (que proxya a n8n).
+ * Reemplaza al embed de Typebot. Llama a /api/chat (motor propio o n8n, según config).
  *
  * Por qué no Typebot:
  *   - El builder + viewer 3.15 tienen un Code block sandbox (vm2) que no expone
@@ -130,13 +130,20 @@ export default function MKPetsChat() {
       from: 'user',
       text,
     }
+    // El servidor no guarda estado entre requests: le mandamos los últimos turnos
+    // para que el vendedor recuerde de qué veníamos hablando.
+    const history = messages
+      .filter((m) => m.from !== 'system' && m.id !== 'welcome' && m.text)
+      .slice(-8)
+      .map((m) => ({ role: m.from === 'user' ? 'user' : 'assistant', text: m.text }))
+
     setMessages((prev) => [...prev, userMsg])
 
     try {
       const r = await fetch('/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: text, sessionId }),
+        body:    JSON.stringify({ message: text, sessionId, history }),
       })
       const data: ChatResponse = await r.json()
 
@@ -290,6 +297,7 @@ export default function MKPetsChat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Escribí tu mensaje..."
+              maxLength={500}
               className={cn(
                 'flex-1 px-3 py-2 rounded-pill text-sm',
                 'bg-mk-light/60 border border-transparent focus:border-mk-orange',

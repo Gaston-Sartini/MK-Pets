@@ -19,7 +19,8 @@
 
 services:
   n8n:
-    image: n8nio/n8n:latest
+    # Versión fijada: con :latest un `docker compose pull` puede romper los workflows.
+    image: n8nio/n8n:2.21.5
     container_name: n8n
     restart: unless-stopped
     ports:
@@ -43,6 +44,13 @@ services:
       # Variable que el workflow lee como $env.SUPABASE_ANON_KEY
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_URL:      ${SUPABASE_URL}
+
+      # Workflow "WhatsApp Notificación Pedido": secreto compartido con el sitio
+      # (N8N_WEBHOOK_SECRET allá) y acceso a Evolution API.
+      MKPETS_WEBHOOK_SECRET: ${MKPETS_WEBHOOK_SECRET:-}
+      EVOLUTION_API_URL:     ${EVOLUTION_API_URL:-http://host.docker.internal:8085}
+      EVOLUTION_INSTANCE:    ${EVOLUTION_INSTANCE:-mi-bot}
+      EVOLUTION_API_KEY:     ${EVOLUTION_API_KEY:-}
 
       # Ejecutar tasks en proceso separado (recomendado en versiones nuevas)
       N8N_RUNNERS_ENABLED:               'true'

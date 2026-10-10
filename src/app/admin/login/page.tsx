@@ -15,7 +15,6 @@ export default function AdminLoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    console.log('[admin-login] submit start', { email })
 
     try {
       const res = await fetch('/api/admin/login', {
@@ -25,8 +24,6 @@ export default function AdminLoginPage() {
         body:        JSON.stringify({ email, password }),
       })
 
-      console.log('[admin-login] response status:', res.status)
-
       if (!res.ok) {
         let msg = 'Error al iniciar sesión'
         try {
@@ -35,17 +32,14 @@ export default function AdminLoginPage() {
         } catch {
           // body was not JSON
         }
-        console.warn('[admin-login] login failed:', msg)
         setError(msg)
         return
       }
 
-      console.log('[admin-login] login OK, redirecting to /admin')
       router.push('/admin')
       router.refresh()
-    } catch (err) {
-      console.error('[admin-login] fetch error:', err)
-      setError('Error de conexión — abrí DevTools (F12) y revisá la consola')
+    } catch {
+      setError('Error de conexión')
     } finally {
       setLoading(false)
     }

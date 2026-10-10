@@ -1,26 +1,36 @@
 /**
- * /api/chat — proxy desde el browser al webhook de n8n.
- * Por qué proxy:
- *   - El n8n local corre en :5678 sin CORS habilitado, así que llamarlo desde
- *     el browser daría CORS error. El server-side de Next.js no tiene esa
- *     restricción y puede reachear localhost:5678 directamente.
- *   - Permite agregar timeout, sanitización y logs sin tocar el bot.
+ * /api/chat — el chat "vendedor" de la tienda.
+ *
+ * Dos motores posibles:
+ *   - nativo (default si hay LLM_API_KEY): src/lib/chat/engine.ts llama al modelo
+ *     directo desde el sitio. No necesita ningún servidor aparte.
+ *   - n8n (CHAT_ENGINE=n8n, o si no hay LLM_API_KEY): reenvía al webhook de n8n.
+ *     Requiere tener n8n corriendo 24/7 y accesible desde internet.
  */
 import { NextResponse } from 'next/server'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { isNativeChatConfigured, runChat, sanitizeHistory } from '@/lib/chat/engine'
+import { logger } from '@/lib/logger'
 
 export const runtime = 'nodejs'
 
-// CHAT_VERSION: 'v1' (regex routing) | 'v2' (LLM understand + conversational)
-// Default: v2 (más smart). Cambiar a 'v1' si v2 da problemas.
+// CHAT_VERSION: 'v1' | 'v2' | 'v3' (Gemini OpenAI-compat)
+// Default: v2. Cambiar CHAT_VERSION en .env para elegir versión.
 const CHAT_VERSION = process.env.CHAT_VERSION || process.env.NEXT_PUBLIC_CHAT_VERSION || 'v2'
+
+const VERSION_SUFFIX: Record<string, string> = { v1: '', v2: '-v2', v3: '-v3' }
+const suffix = VERSION_SUFFIX[CHAT_VERSION] ?? '-v2'
 
 const N8N_WEBHOOK_URL =
   process.env.N8N_WEBHOOK_URL ||
-  `http://localhost:5678/webhook/mk-pets-chat${CHAT_VERSION === 'v2' ? '-v2' : ''}`
+  `http://localhost:5678/webhook/mk-pets-chat${suffix}`
+
+const MAX_MESSAGE_CHARS = 500
 
 interface ChatRequestBody {
   message?:   string
   sessionId?: string
+  history?:   unknown
 }
 
 const FALLBACK = {
@@ -30,6 +40,16 @@ const FALLBACK = {
 }
 
 export async function POST(req: Request) {
+  // Cada mensaje son 2 llamadas al modelo de IA: sin límite, un script puede
+  // agotar la cuota (o la plata) de la API en minutos.
+  const rl = rateLimit(`chat:${getClientIp(req)}`, { limit: 30, windowMs: 5 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ...FALLBACK, reply: 'Uy, vamos muy rápido 😅 Esperá un minutito y seguimos.', suggestions: [] },
+      { status: 429 },
+    )
+  }
+
   let body: ChatRequestBody
   try {
     body = await req.json()
@@ -40,13 +60,22 @@ export async function POST(req: Request) {
     )
   }
 
-  const message   = typeof body.message   === 'string' ? body.message.trim()   : ''
-  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : ''
-  if (!message || !sessionId) {
+  const message   = typeof body.message   === 'string' ? body.message.trim().slice(0, MAX_MESSAGE_CHARS) : ''
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim().slice(0, 64)              : ''
+  if (!message || !/^[\w-]{4,64}$/.test(sessionId)) {
     return NextResponse.json(
       { ...FALLBACK, reply: 'Falta message o sessionId.' },
       { status: 400 },
     )
+  }
+
+  if (process.env.CHAT_ENGINE !== 'n8n' && isNativeChatConfigured()) {
+    try {
+      return NextResponse.json(await runChat(message, sanitizeHistory(body.history)))
+    } catch (e) {
+      logger.error('chat engine failed', { error: e instanceof Error ? e.message : String(e) })
+      return NextResponse.json(FALLBACK, { status: 200 })
+    }
   }
 
   const ctrl    = new AbortController()
@@ -54,7 +83,10 @@ export async function POST(req: Request) {
   try {
     const r = await fetch(N8N_WEBHOOK_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.N8N_WEBHOOK_SECRET && { 'x-mkpets-secret': process.env.N8N_WEBHOOK_SECRET }),
+      },
       body:    JSON.stringify({ message, sessionId }),
       signal:  ctrl.signal,
       cache:   'no-store',

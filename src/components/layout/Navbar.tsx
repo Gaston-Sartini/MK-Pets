@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ShoppingCart, Search, Phone, X } from 'lucide-react'
+import { ShoppingCart, Search, X } from 'lucide-react'
 import { useCartStore } from '@/store/cart-store'
 import { cn } from '@/lib/utils'
 
@@ -53,10 +53,8 @@ export function Navbar({ categories = [] }: NavbarProps) {
       isScrolled && 'shadow-navbar'
     )}>
       {/* MICRO-BANNER */}
-      <div className="shipping-strip text-center py-1.5 text-xs gap-4 md:gap-8">
+      <div className="shipping-strip text-center py-1.5 text-xs">
         <span>🚚 <strong>Envío gratis</strong> a CABA</span>
-        <span className="hidden sm:inline">·</span>
-        <span className="hidden sm:inline">📞 11 6669 8395</span>
       </div>
 
       <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8">
@@ -110,20 +108,6 @@ export function Navbar({ categories = [] }: NavbarProps) {
 
           {/* RIGHT ACTIONS */}
           <div className="flex items-center gap-1 md:gap-2 ml-auto">
-            {/* WhatsApp — desktop */}
-            <a
-              href="https://wa.me/5491166698395"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-pill
-                         bg-mk-light text-mk-mid text-xs font-body font-medium
-                         hover:bg-[#25D366] hover:text-white transition-all duration-200"
-              aria-label="Contactar por WhatsApp"
-            >
-              <Phone className="w-3.5 h-3.5" />
-              <span>11 6669 8395</span>
-            </a>
-
             {/* Search icon — mobile */}
             <button
               onClick={() => setSearchOpen(v => !v)}

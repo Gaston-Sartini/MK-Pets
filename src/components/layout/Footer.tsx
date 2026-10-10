@@ -68,7 +68,7 @@ export async function Footer() {
             <ul className="space-y-2.5 font-body text-sm text-white/80">
               <li>
                 <a
-                  href="https://wa.me/5491166698395"
+                  href="https://wa.me/5491166698395?text=Hola!%20Quer%C3%ADa%20consultarte%20lo%20siguiente..."
                   className="flex items-center gap-2 hover:text-white transition-colors"
                   target="_blank"
                   rel="noopener noreferrer"

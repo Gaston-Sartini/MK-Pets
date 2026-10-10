@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { prisma } from './prisma'
 import type { Product } from '@/types'
 
 // Supabase select for product cards (no description)
@@ -204,39 +205,31 @@ export async function getRelatedProducts(
 
 /**
  * Pedido por número con todos sus ítems.
+ *
+ * Va por Prisma (conexión directa del servidor) y no por la anon key: los
+ * pedidos tienen datos personales y RLS bloquea su lectura pública.
  */
 export async function getOrderByNumber(orderNumber: string) {
-  const { data: order, error } = await supabase
-    .from('Order')
-    .select(`
-      id, orderNumber, status, paymentMethod, paymentStatus,
-      customerName, address, phone, notes, total, canModifyUntil, createdAt,
-      items:OrderItem (
-        id, quantity, unitPrice, variantLabel,
-        product:Product ( id, name, images, slug )
-      )
-    `)
-    .eq('orderNumber', orderNumber)
-    .single()
+  const order = await prisma.order.findUnique({
+    where:  { orderNumber },
+    select: {
+      id: true, orderNumber: true, status: true, paymentMethod: true, paymentStatus: true,
+      customerName: true, address: true, phone: true, notes: true, total: true,
+      canModifyUntil: true, createdAt: true,
+      items: {
+        select: {
+          id: true, quantity: true, unitPrice: true, variantLabel: true,
+          product: { select: { id: true, name: true, images: true, slug: true } },
+        },
+      },
+    },
+  })
 
-  if (error || !order) return null
+  if (!order) return null
 
   return {
     ...order,
-    total:          parseFloat(order.total as string),
-    canModifyUntil: order.canModifyUntil as string,
-    createdAt:      order.createdAt as string,
-    items: (order.items as any[]).map(i => ({
-      id:           i.id,
-      quantity:     i.quantity,
-      unitPrice:    parseFloat(i.unitPrice),
-      variantLabel: i.variantLabel,
-      product: {
-        id:     i.product.id,
-        name:   i.product.name,
-        images: i.product.images,
-        slug:   i.product.slug,
-      },
-    })),
+    total: Number(order.total),
+    items: order.items.map(i => ({ ...i, unitPrice: Number(i.unitPrice) })),
   }
 }

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useCartStore } from '@/store/cart-store'
 import { useToastStore } from '@/store/toast-store'
 import { cacheOrderNumber } from '@/lib/order-cache'
-import { formatPrice } from '@/lib/utils'
+import { startMpCheckout } from '@/lib/mp-client'
 import { StepIndicator }      from '@/components/checkout/StepIndicator'
 import { PaymentSelector }    from '@/components/checkout/PaymentSelector'
 import { DeliveryForm }       from '@/components/checkout/DeliveryForm'
@@ -23,13 +23,14 @@ export default function CheckoutPage() {
   const [step, setStep]                   = useState<1 | 2>(1)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null)
   const [isLoading, setIsLoading]         = useState(false)
+  const [orderPlaced, setOrderPlaced]     = useState(false)
 
   // Redirect if cart is empty
   useEffect(() => {
-    if (items.length === 0) {
+    if (items.length === 0 && !orderPlaced) {
       router.replace('/')
     }
-  }, [items.length, router])
+  }, [items.length, orderPlaced, router])
 
   if (items.length === 0) return null
 
@@ -59,7 +60,6 @@ export default function CheckoutPage() {
             productId:    i.productId,
             variantLabel: i.variantLabel,
             quantity:     i.quantity,
-            unitPrice:    i.unitPrice,
           })),
         }),
       })
@@ -70,38 +70,26 @@ export default function CheckoutPage() {
       }
 
       const { orderNumber } = await orderRes.json()
+      setOrderPlaced(true)
 
       // 2. Cache order number on device
       cacheOrderNumber(orderNumber)
-      clearCart()
 
-      // 3. If MercadoPago, get preference and redirect
+      // 3. If MercadoPago, redirect to pay. The order already exists, so if MP
+      //    fails we send the customer to the order page, where they can retry.
       if (paymentMethod === 'MERCADOPAGO') {
-        const mpRes = await fetch('/api/pagos/crear-preferencia', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderNumber,
-            items: items.map(i => ({
-              id:         i.productId,
-              title:      i.name + (i.variantLabel ? ` (${i.variantLabel})` : ''),
-              quantity:   i.quantity,
-              unit_price: i.unitPrice,
-            })),
-            total: totalPrice(),
-          }),
-        })
-
-        if (!mpRes.ok) throw new Error('Error al iniciar el pago con MercadoPago')
-
-        const { initPoint, sandboxUrl } = await mpRes.json()
-        const redirectUrl = process.env.NODE_ENV === 'production' ? initPoint : sandboxUrl
-        window.location.href = redirectUrl
+        try {
+          await startMpCheckout(orderNumber)
+        } catch {
+          router.push(`/pedido/${orderNumber}?mp=error`)
+        }
+        clearCart()
         return
       }
 
       // 4. Cash on delivery — go directly to order page
       router.push(`/pedido/${orderNumber}`)
+      clearCart()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Ocurrió un error inesperado'
       addToast({ type: 'error', message: msg })

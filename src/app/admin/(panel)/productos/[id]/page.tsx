@@ -1,12 +1,16 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { getAdminClient } from '@/lib/admin-auth'
 import ProductForm from '@/components/admin/ProductForm'
 
 export const dynamic = 'force-dynamic'
 
 export default async function EditarProductoPage({ params }: { params: { id: string } }) {
+  // RLS solo deja ver productos inactivos y pedidos con la sesión del admin
+  const supabase = await getAdminClient()
+  if (!supabase) redirect('/admin/login')
+
   const { data: p } = await supabase
     .from('Product')
     .select('*, variants:ProductVariant(id, label, price, originalPrice, stock)')

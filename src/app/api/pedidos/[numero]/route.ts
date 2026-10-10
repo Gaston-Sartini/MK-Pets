@@ -2,11 +2,20 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { canModifyOrder } from '@/lib/utils'
+import { restoreStock, takeStock } from '@/lib/stock'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { logger } from '@/lib/logger'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { numero: string } }
 ) {
+  // El número de pedido es la credencial para ver datos personales: frenamos el tanteo.
+  const rl = rateLimit(`order-get:${getClientIp(request)}`, { limit: 60, windowMs: 10 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes. Intentá en unos minutos.' }, { status: 429 })
+  }
+
   const order = await prisma.order.findUnique({
     where: { orderNumber: params.numero },
     select: {
@@ -48,6 +57,8 @@ export async function GET(
   })
 }
 
+class StockError extends Error {}
+
 // Only accepts item IDs + new quantities — prices come from the DB
 const modifySchema = z.object({
   items: z.array(z.object({
@@ -66,8 +77,9 @@ export async function PATCH(
       id:             true,
       canModifyUntil: true,
       status:         true,
+      paymentStatus:  true,
       items: {
-        select: { id: true, unitPrice: true, productId: true, variantLabel: true },
+        select: { id: true, unitPrice: true, productId: true, variantLabel: true, quantity: true },
       },
     },
   })
@@ -90,7 +102,15 @@ export async function PATCH(
     )
   }
 
-  const body   = await request.json()
+  // Con el pago ya acreditado, cambiar cantidades dejaría el total distinto a lo cobrado.
+  if (order.paymentStatus === 'APPROVED') {
+    return NextResponse.json(
+      { error: 'El pedido ya está pago. Para cambiarlo escribinos por WhatsApp.' },
+      { status: 409 }
+    )
+  }
+
+  const body   = await request.json().catch(() => null)
   const parsed = modifySchema.safeParse(body)
 
   if (!parsed.success) {
@@ -129,22 +149,35 @@ export async function PATCH(
     0
   )
 
-  await prisma.$transaction([
-    prisma.orderItem.deleteMany({ where: { orderId: order.id } }),
-    prisma.orderItem.createMany({
-      data: activeItems.map(i => ({
-        orderId:      order.id,
-        productId:    i.productId,
-        variantLabel: i.variantLabel,
-        quantity:     qtyMap.get(i.id)!,
-        unitPrice:    priceMap.get(i.id)!,
-      })),
-    }),
-    prisma.order.update({
-      where: { id: order.id },
-      data:  { total: newTotal },
-    }),
-  ])
+  // El stock se descontó al crear el pedido: acá se ajusta solo la diferencia.
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const item of order.items) {
+        const newQty = qtyMap.get(item.id) ?? 0
+        const delta  = newQty - item.quantity
+        const line   = { productId: item.productId, variantLabel: item.variantLabel, quantity: Math.abs(delta) }
+
+        if (delta > 0 && !(await takeStock(tx, line))) {
+          throw new StockError('No hay stock suficiente para sumar esa cantidad.')
+        }
+        if (delta < 0) await restoreStock(tx, [line])
+
+        if (newQty === 0) {
+          await tx.orderItem.delete({ where: { id: item.id } })
+        } else if (delta !== 0) {
+          await tx.orderItem.update({ where: { id: item.id }, data: { quantity: newQty } })
+        }
+      }
+
+      await tx.order.update({ where: { id: order.id }, data: { total: newTotal } })
+    })
+  } catch (err) {
+    if (err instanceof StockError) {
+      return NextResponse.json({ error: err.message }, { status: 422 })
+    }
+    logger.error('Error modifying order', { error: err instanceof Error ? err.message : String(err) })
+    return NextResponse.json({ error: 'No se pudo modificar el pedido' }, { status: 500 })
+  }
 
   return NextResponse.json({ orderNumber: params.numero, total: newTotal })
 }

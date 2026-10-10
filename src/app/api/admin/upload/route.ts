@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
-import { supabase } from '@/lib/supabase'
 
 const BUCKET = 'products'
 const MAX_BYTES = 5 * 1024 * 1024 // 5 MB per file
@@ -29,8 +28,9 @@ function extFromFile(file: File): string {
 
 /** Upload a product image. Returns the public URL. */
 export async function POST(req: Request) {
-  const auth = requireAdmin()
-  if (auth) return auth.error
+  const auth = await requireAdmin()
+  if (auth.error) return auth.error
+  const { supabase } = auth
 
   let formData: FormData
   try {
@@ -93,8 +93,9 @@ export async function POST(req: Request) {
 
 /** Delete an uploaded image. Body: { path: string } */
 export async function DELETE(req: Request) {
-  const auth = requireAdmin()
-  if (auth) return auth.error
+  const auth = await requireAdmin()
+  if (auth.error) return auth.error
+  const { supabase } = auth
 
   let body: { path?: string }
   try {
@@ -104,8 +105,8 @@ export async function DELETE(req: Request) {
   }
 
   const path = body.path?.trim()
-  if (!path) {
-    return NextResponse.json({ error: 'Falta "path"' }, { status: 400 })
+  if (!path || path.length > 300 || path.startsWith('/') || path.includes('..')) {
+    return NextResponse.json({ error: '"path" inválido' }, { status: 400 })
   }
 
   const { error } = await supabase.storage.from(BUCKET).remove([path])

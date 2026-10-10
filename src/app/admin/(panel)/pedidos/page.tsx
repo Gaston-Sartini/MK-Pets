@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { formatPrice } from '@/lib/utils'
-
-export const dynamic = 'force-dynamic'
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import { formatPrice, parseDbDate } from '@/lib/utils'
+import { SHOP_TIMEZONE } from '@/lib/shop'
 
 const STATUSES = ['PENDING','CONFIRMED','PREPARING','SHIPPED','DELIVERED','CANCELLED'] as const
 const STATUS_LABEL: Record<string, string> = {
@@ -30,37 +29,124 @@ const PAYMENT_LABEL: Record<string, string> = {
   REJECTED: 'Rechazado',
   REFUNDED: 'Reembolsado',
 }
+const METHOD_LABEL: Record<string, string> = {
+  MERCADOPAGO:      'MercadoPago',
+  CASH_ON_DELIVERY: 'Efectivo / transferencia',
+}
+
+interface AdminOrder {
+  id: string
+  orderNumber: string
+  customerName: string
+  phone: string
+  address: string
+  notes: string | null
+  total: number
+  status: string
+  paymentMethod: string
+  paymentStatus: string
+  createdAt: string
+  items: { id: string; quantity: number; unitPrice: number; variantLabel: string | null; product: { name: string } | null }[]
+}
+
+type Filter = 'active' | 'all' | (typeof STATUSES)[number]
 
 export default function AdminPedidosPage() {
-  const [orders, setOrders]   = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [orders, setOrders]     = useState<AdminOrder[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState('')
+  const [filter, setFilter]     = useState<Filter>('active')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [saving, setSaving]     = useState<string | null>(null)
 
-  useEffect(() => { loadOrders() }, [])
+  const loadOrders = useCallback(async () => {
+    try {
+      const res  = await fetch('/api/admin/pedidos-list', { cache: 'no-store' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'No se pudieron cargar los pedidos')
+      setOrders(data)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudieron cargar los pedidos')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const loadOrders = async () => {
-    setLoading(true)
-    const res  = await fetch('/api/admin/pedidos-list')
-    const data = await res.json()
-    setOrders(data)
-    setLoading(false)
-  }
+  useEffect(() => { loadOrders() }, [loadOrders])
 
-  const updateStatus = async (orderNumber: string, status: string) => {
-    await fetch(`/api/admin/pedidos/${orderNumber}`, {
-      method:  'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ status }),
-    })
-    loadOrders()
+  const updateStatus = async (order: AdminOrder, status: string) => {
+    if (status === order.status) return
+    if (status === 'CANCELLED' && !confirm(
+      `¿Cancelar el pedido ${order.orderNumber}? Se devuelve el stock y no se puede deshacer.`
+    )) return
+
+    setSaving(order.orderNumber)
+    try {
+      const res = await fetch(`/api/admin/pedidos/${order.orderNumber}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ status }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error ?? 'No se pudo cambiar el estado')
+      } else {
+        setError('')
+      }
+    } catch {
+      setError('Error de conexión al cambiar el estado')
+    } finally {
+      setSaving(null)
+      loadOrders()
+    }
   }
 
   if (loading) return <div className="flex items-center justify-center h-64 text-mk-mid">Cargando pedidos...</div>
 
+  const visible = orders.filter(o =>
+    filter === 'all'    ? true
+    : filter === 'active' ? !['DELIVERED', 'CANCELLED'].includes(o.status)
+    : o.status === filter
+  )
+
+  const FILTERS: { id: Filter; label: string }[] = [
+    { id: 'active', label: 'En curso' },
+    { id: 'all',    label: 'Todos' },
+    ...STATUSES.map(s => ({ id: s as Filter, label: STATUS_LABEL[s] })),
+  ]
+
   return (
     <div>
-      <h1 className="font-display font-bold text-2xl text-mk-dark mb-6">Pedidos</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="font-display font-bold text-2xl text-mk-dark">Pedidos</h1>
+        <button type="button" onClick={loadOrders} className="text-sm font-medium text-mk-orange hover:text-mk-orange-dark">
+          ↻ Actualizar
+        </button>
+      </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {error && (
+        <div role="alert" className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+      )}
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        {FILTERS.map(f => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setFilter(f.id)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+              filter === f.id
+                ? 'bg-mk-orange text-white border-mk-orange'
+                : 'bg-white text-gray-600 border-gray-300 hover:border-mk-orange'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -73,47 +159,97 @@ export default function AdminPedidosPage() {
             </tr>
           </thead>
           <tbody>
-            {orders.length === 0 ? (
+            {visible.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-mk-mid">No hay pedidos aún.</td>
+                <td colSpan={6} className="px-4 py-12 text-center text-mk-mid">No hay pedidos en esta vista.</td>
               </tr>
-            ) : orders.map((o: any) => (
-              <tr key={o.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <p className="font-semibold text-mk-dark">{o.orderNumber}</p>
-                  <p className="text-xs text-mk-mid">{o.items?.length ?? 0} producto(s)</p>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-mk-dark">{o.customerName}</p>
-                  <p className="text-xs text-mk-mid">{o.phone}</p>
-                </td>
-                <td className="px-4 py-3 text-mk-mid">
-                  {new Date(o.createdAt).toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' })}
-                  <p className="text-xs">{new Date(o.createdAt).toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' })}</p>
-                </td>
-                <td className="px-4 py-3 font-bold text-mk-dark">{formatPrice(o.total)}</td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    o.paymentStatus === 'APPROVED' ? 'bg-green-100 text-green-800'
-                    : o.paymentStatus === 'REJECTED' ? 'bg-red-100 text-red-800'
-                    : 'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {PAYMENT_LABEL[o.paymentStatus] ?? o.paymentStatus}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <select
-                    value={o.status}
-                    onChange={e => updateStatus(o.orderNumber, e.target.value)}
-                    className={`text-xs font-medium px-2 py-1 rounded-full border-0 outline-none cursor-pointer ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-700'}`}
-                  >
-                    {STATUSES.map(s => (
-                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            ))}
+            ) : visible.map(o => {
+              const created = parseDbDate(o.createdAt)
+              const isOpen  = expanded === o.id
+              return (
+                <Fragment key={o.id}>
+                  <tr className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setExpanded(isOpen ? null : o.id)}
+                        aria-expanded={isOpen}
+                        className="text-left"
+                      >
+                        <p className="font-semibold text-mk-dark">{isOpen ? '▾' : '▸'} {o.orderNumber}</p>
+                        <p className="text-xs text-mk-mid">{o.items?.length ?? 0} producto(s) · ver detalle</p>
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-mk-dark">{o.customerName}</p>
+                      <a
+                        href={`https://wa.me/${o.phone.replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-mk-orange hover:underline"
+                      >
+                        {o.phone}
+                      </a>
+                    </td>
+                    <td className="px-4 py-3 text-mk-mid">
+                      {created.toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric', timeZone: SHOP_TIMEZONE })}
+                      <p className="text-xs">{created.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit', timeZone: SHOP_TIMEZONE })}</p>
+                    </td>
+                    <td className="px-4 py-3 font-bold text-mk-dark">{formatPrice(o.total)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        o.paymentStatus === 'APPROVED' ? 'bg-green-100 text-green-800'
+                        : o.paymentStatus === 'REJECTED' ? 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {PAYMENT_LABEL[o.paymentStatus] ?? o.paymentStatus}
+                      </span>
+                      <p className="text-xs text-mk-mid mt-1">{METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={o.status}
+                        disabled={saving === o.orderNumber || o.status === 'CANCELLED'}
+                        onChange={e => updateStatus(o, e.target.value)}
+                        aria-label={`Estado del pedido ${o.orderNumber}`}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 ${STATUS_COLOR[o.status] ?? 'bg-gray-100 text-gray-700'}`}
+                      >
+                        {STATUSES.map(s => (
+                          <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="border-b border-gray-100 bg-gray-50">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Entrega</p>
+                            <p className="text-mk-dark">{o.address}</p>
+                            {o.notes && <p className="text-mk-mid mt-1 italic">“{o.notes}”</p>}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Productos</p>
+                            <ul className="space-y-1">
+                              {o.items.map(i => (
+                                <li key={i.id} className="flex justify-between gap-4 text-mk-dark">
+                                  <span>
+                                    {i.quantity} × {i.product?.name ?? 'Producto'}
+                                    {i.variantLabel ? ` (${i.variantLabel})` : ''}
+                                  </span>
+                                  <span className="font-medium">{formatPrice(i.unitPrice * i.quantity)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
           </tbody>
         </table>
       </div>

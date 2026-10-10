@@ -1,4 +1,5 @@
 import { Suspense } from 'react'
+import { logger } from '@/lib/logger'
 import { Footer } from '@/components/layout/Footer'
 import { ProductGrid } from '@/components/catalog/ProductGrid'
 import { CategoryChips } from '@/components/catalog/CategoryChips'
@@ -80,7 +81,7 @@ export default async function ProductosPage({ searchParams }: PageProps) {
     products = productsResult.products
     categories = categoriesResult
   } catch (err) {
-    console.error('[productos] Error cargando catálogo:', err)
+    logger.error('Error cargando catálogo', { error: err instanceof Error ? err.message : String(err) })
   }
 
   const activeCategory = categories.find(c => c.slug === cat)

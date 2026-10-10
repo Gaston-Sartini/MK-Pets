@@ -29,15 +29,35 @@ interface OrderData {
   items:          OrderItem[]
 }
 
+function useCountdown(targetIso: string | undefined) {
+  const [secondsLeft, setSecondsLeft] = useState<number>(() =>
+    targetIso ? Math.max(0, Math.floor((new Date(targetIso).getTime() - Date.now()) / 1000)) : 0
+  )
+
+  useEffect(() => {
+    if (!targetIso) return
+    const id = setInterval(() => {
+      setSecondsLeft(Math.max(0, Math.floor((new Date(targetIso).getTime() - Date.now()) / 1000)))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [targetIso])
+
+  const minutes = Math.floor(secondsLeft / 60)
+  const seconds = secondsLeft % 60
+  return { secondsLeft, label: `${minutes}:${String(seconds).padStart(2, '0')}` }
+}
+
 export default function ModifyOrderPage() {
   const params   = useParams<{ numero: string }>()
   const router   = useRouter()
   const { addToast } = useToastStore()
 
-  const [order, setOrder]         = useState<OrderData | null>(null)
+  const [order, setOrder]           = useState<OrderData | null>(null)
   const [quantities, setQuantities] = useState<Record<string, number>>({})
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving]   = useState(false)
+  const [isLoading, setIsLoading]   = useState(true)
+  const [isSaving, setIsSaving]     = useState(false)
+
+  const countdown = useCountdown(order?.canModifyUntil)
 
   useEffect(() => {
     fetch(`/api/pedidos/${params.numero}`)
@@ -130,9 +150,31 @@ export default function ModifyOrderPage() {
         </Link>
 
         <h1 className="text-2xl font-bold text-mk-dark mb-2">Modificar pedido</h1>
-        <p className="text-sm text-mk-mid mb-6">
+        <p className="text-sm text-mk-mid mb-2">
           Podés ajustar las cantidades. Los productos con cantidad 0 se eliminan del pedido.
         </p>
+
+        {/* Countdown */}
+        {countdown.secondsLeft > 0 ? (
+          <div className={[
+            'inline-flex items-center gap-2 text-sm font-semibold px-3 py-1.5 rounded-pill mb-6',
+            countdown.secondsLeft <= 120
+              ? 'bg-red-50 text-red-600 border border-red-200'
+              : 'bg-mk-orange-light text-mk-orange border border-mk-orange/20',
+          ].join(' ')}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 6v6l4 2" />
+            </svg>
+            Tiempo restante para modificar: <span className="tabular-nums">{countdown.label}</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded-pill mb-6">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" />
+            </svg>
+            El tiempo para modificar este pedido expiró
+          </div>
+        )}
 
         <div className="bg-white rounded-card shadow-card p-5 space-y-4">
           {order.items.map(item => {
@@ -158,7 +200,7 @@ export default function ModifyOrderPage() {
                   {item.variantLabel && (
                     <p className="text-xs text-mk-mid">{item.variantLabel}</p>
                   )}
-                  <p className="text-xs text-mk-mid">${formatPrice(item.unitPrice)} c/u</p>
+                  <p className="text-xs text-mk-mid">{formatPrice(item.unitPrice)} c/u</p>
                 </div>
 
                 {/* Quantity control */}
@@ -185,7 +227,7 @@ export default function ModifyOrderPage() {
                 </div>
 
                 <p className="font-bold text-sm text-mk-dark w-20 text-right flex-shrink-0">
-                  ${formatPrice(item.unitPrice * qty)}
+                  {formatPrice(item.unitPrice * qty)}
                 </p>
               </div>
             )
@@ -195,17 +237,17 @@ export default function ModifyOrderPage() {
         {/* New total */}
         <div className="mt-4 bg-mk-orange-light border border-mk-orange/20 rounded-card px-5 py-3 flex justify-between items-center">
           <span className="font-semibold text-mk-dark">Nuevo total</span>
-          <span className="font-bold text-xl text-mk-orange">${formatPrice(newTotal)}</span>
+          <span className="font-bold text-xl text-mk-orange">{formatPrice(newTotal)}</span>
         </div>
 
         <div className="mt-6 flex flex-col gap-3">
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || countdown.secondsLeft === 0}
             className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isSaving ? 'Guardando...' : 'Guardar cambios 🐾'}
+            {isSaving ? 'Guardando...' : countdown.secondsLeft === 0 ? 'Tiempo expirado' : 'Guardar cambios 🐾'}
           </button>
           <Link href={`/pedido/${params.numero}`} className="btn-ghost text-center">
             Cancelar

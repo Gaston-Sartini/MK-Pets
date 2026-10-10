@@ -1,66 +1,45 @@
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/admin-auth'
-import { supabase } from '@/lib/supabase'
+import { productSchema, firstIssue } from '@/lib/validations/admin'
 
 /** Invalidate every public page that shows products. */
 function revalidatePublicShop() {
   revalidatePath('/', 'layout')
 }
 
-/** Parse "" / null / undefined → null, otherwise a number (or null if not finite). */
-function num(v: unknown): number | null {
-  if (v === null || v === undefined || v === '') return null
-  const n = typeof v === 'number' ? v : parseFloat(String(v))
-  return Number.isFinite(n) ? n : null
-}
-
 export async function POST(req: Request) {
-  const auth = requireAdmin()
-  if (auth) return auth.error
+  const auth = await requireAdmin()
+  if (auth.error) return auth.error
+  const { supabase } = auth
 
-  const body = await req.json()
-  const { variants = [], ...productData } = body
-
-  const basePrice     = num(productData.basePrice)     ?? 0
-  const originalPrice = num(productData.originalPrice)
-  if (originalPrice !== null && originalPrice <= basePrice) {
-    return NextResponse.json(
-      { error: 'El precio antes debe ser mayor al precio actual.' },
-      { status: 400 },
-    )
+  const parsed = productSchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success) {
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 })
   }
+  const { variants, ...productData } = parsed.data
 
   const { data: product, error } = await supabase
     .from('Product')
-    .insert([{
-      name:          productData.name,
-      slug:          productData.slug,
-      description:   productData.description || null,
-      images:        productData.images?.filter(Boolean) ?? [],
-      basePrice,
-      originalPrice,
-      stock:         parseInt(productData.stock),
-      isActive:      productData.isActive ?? true,
-      isFeatured:    productData.isFeatured ?? false,
-      badge:         productData.badge || null,
-      categoryId:    productData.categoryId,
-    }])
+    .insert([productData])
     .select('id')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    const msg = error.code === '23505' ? 'Ya existe un producto con ese slug.' : error.message
+    return NextResponse.json({ error: msg }, { status: error.code === '23505' ? 409 : 500 })
+  }
 
   if (variants.length > 0) {
-    await supabase.from('ProductVariant').insert(
-      variants.map((v: any) => ({
-        label:         v.label,
-        price:         num(v.price) ?? 0,
-        originalPrice: num(v.originalPrice),
-        stock:         parseInt(v.stock),
-        productId:     product.id,
-      }))
-    )
+    const { error: variantError } = await supabase
+      .from('ProductVariant')
+      .insert(variants.map(v => ({ ...v, productId: product.id })))
+
+    if (variantError) {
+      // No dejamos un producto a medio crear: sin variantes se vendería al precio base.
+      await supabase.from('Product').delete().eq('id', product.id)
+      return NextResponse.json({ error: `No se pudieron guardar las variantes: ${variantError.message}` }, { status: 500 })
+    }
   }
 
   revalidatePublicShop()

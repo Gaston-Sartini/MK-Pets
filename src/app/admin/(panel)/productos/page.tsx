@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import { supabase } from '@/lib/supabase'
+import { redirect } from 'next/navigation'
+import { getAdminClient } from '@/lib/admin-auth'
 import { Plus, Pencil, Eye, EyeOff } from 'lucide-react'
 import { formatPrice } from '@/lib/utils'
 
@@ -14,6 +15,10 @@ const BADGE_COLOR: Record<string, string> = {
 }
 
 export default async function AdminProductosPage() {
+  // RLS solo deja ver productos inactivos y pedidos con la sesión del admin
+  const supabase = await getAdminClient()
+  if (!supabase) redirect('/admin/login')
+
   const { data: products } = await supabase
     .from('Product')
     .select('id, name, slug, images, basePrice, stock, isActive, isFeatured, badge, category:Category(name, emoji)')

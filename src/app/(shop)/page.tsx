@@ -1,8 +1,8 @@
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
+import { logger } from '@/lib/logger'
 import { Footer } from '@/components/layout/Footer'
 import { HeroBanner } from '@/components/layout/HeroBanner'
-import { ShippingBanner } from '@/components/layout/ShippingBanner'
 import { ProductGrid } from '@/components/catalog/ProductGrid'
 import { ProductCardSkeleton } from '@/components/ui/Skeleton'
 import { CategoryChips } from '@/components/catalog/CategoryChips'
@@ -73,7 +73,7 @@ export default async function HomePage() {
     sections = sectionData
   } catch (err) {
     // Log real error so silent failures don't hide DB issues.
-    console.error('[home] Error cargando productos:', err)
+    logger.error('Error cargando productos en home', { error: err instanceof Error ? err.message : String(err) })
   }
 
   return (
@@ -100,8 +100,6 @@ export default async function HomePage() {
           <ProductGrid products={featured} />
         </Suspense>
       </section>
-
-      <ShippingBanner />
 
       {/* SECCIONES POR CATEGORÍA (dinámicas, leídas de la DB) */}
       {sectionCats.map((section, i) => (

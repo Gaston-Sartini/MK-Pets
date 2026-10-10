@@ -1,10 +1,12 @@
-import { supabase } from '@/lib/supabase'
+import { redirect } from 'next/navigation'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { getAdminClient } from '@/lib/admin-auth'
 import { Package, ShoppingCart, Tag, AlertTriangle } from 'lucide-react'
 import { formatPrice } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
-async function getStats() {
+async function getStats(supabase: SupabaseClient) {
   const [
     { count: totalProducts },
     { count: activeProducts },
@@ -14,7 +16,7 @@ async function getStats() {
   ] = await Promise.all([
     supabase.from('Product').select('*', { count: 'exact', head: true }),
     supabase.from('Product').select('*', { count: 'exact', head: true }).eq('isActive', true),
-    supabase.from('Order').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
+    supabase.from('Order').select('*', { count: 'exact', head: true }).in('status', ['PENDING', 'CONFIRMED']),
     supabase.from('Product').select('id, name, stock').eq('isActive', true).lte('stock', 5).order('stock').limit(5),
     supabase.from('Order')
       .select('orderNumber, customerName, total, status, createdAt')
@@ -45,12 +47,16 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export default async function AdminDashboard() {
-  const { totalProducts, activeProducts, pendingOrders, lowStock, recentOrders } = await getStats()
+  // RLS solo deja ver productos inactivos y pedidos con la sesión del admin
+  const supabase = await getAdminClient()
+  if (!supabase) redirect('/admin/login')
+
+  const { totalProducts, activeProducts, pendingOrders, lowStock, recentOrders } = await getStats(supabase)
 
   const stats = [
     { label: 'Productos totales',  value: totalProducts  ?? 0, icon: Package,      color: 'bg-orange-100 text-mk-orange' },
     { label: 'Productos activos',  value: activeProducts ?? 0, icon: Package,      color: 'bg-green-100 text-green-700' },
-    { label: 'Pedidos pendientes', value: pendingOrders  ?? 0, icon: ShoppingCart, color: 'bg-blue-100 text-blue-700' },
+    { label: 'Pedidos por preparar', value: pendingOrders  ?? 0, icon: ShoppingCart, color: 'bg-blue-100 text-blue-700' },
     { label: 'Stock bajo (≤5)',    value: lowStock.length,      icon: AlertTriangle, color: 'bg-red-100 text-red-700' },
   ]
 
