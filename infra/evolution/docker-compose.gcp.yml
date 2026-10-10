@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MK-Pets — Evolution API en la máquina gratuita de Google Cloud (e2-micro, 1 GB)
+#
+# Versión liviana de docker-compose.yml para que entre en 1 GB de RAM:
+#   - sin Postgres propio: usa el schema `evolution` de Supabase, con un usuario
+#     aparte (evolution_app) que no puede leer los datos de la tienda
+#   - sin Redis: caché en memoria del propio proceso
+#
+# Solo Caddy queda expuesto (80/443). Pasos: README-google-cloud.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${WA_DOMAIN} --to evolution:8080
+    volumes:
+      - caddy_data:/data
+    mem_limit: 96m
+    depends_on:
+      - evolution
+
+  evolution:
+    # Versión fijada: es la que se probó con el sitio. Actualizar a conciencia.
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: https://${WA_DOMAIN}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      LANGUAGE: es
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: ${EVOLUTION_DATABASE_URL}
+      DATABASE_CONNECTION_CLIENT_NAME: mkpets
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      # El sitio solo ENVÍA avisos: no hace falta guardar chats ni contactos del teléfono.
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      QRCODE_LIMIT: 30
+      LOG_LEVEL: ERROR,WARN
+      LOG_BAILEYS: error
+      CONFIG_SESSION_PHONE_CLIENT: MK-Pets
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      DEL_INSTANCE: "false"
+      # Tope de memoria de Node: que el proceso recicle antes de que el kernel lo mate
+      NODE_OPTIONS: --max-old-space-size=512
+    volumes:
+      - evolution_instances:/evolution/instances
+    mem_limit: 750m
+
+volumes:
+  caddy_data:
+  evolution_instances:

@@ -3,6 +3,11 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Documentación e infraestructura no cambian el sitio: no gastar un deploy.
+    paths-ignore:
+      - 'docs/**'
+      - 'infra/**'
+      - '**/*.md'
   workflow_dispatch:      # allow manual deploys from GitHub UI
 
 concurrency:
