@@ -162,7 +162,7 @@ Medido en este proyecto: cada mensaje del chat usa ~1.900 tokens de entrada y ~2
 
 - **Groq gratis:** 8.000 tokens por minuto. Son ~4 mensajes por minuto para toda la tienda; por eso lo sentías limitado. El plan Developer sube a 250.000 por minuto y con este uso cuesta centavos.
 - **Gemini:** tu clave hoy responde "créditos de prepago agotados" (HTTP 402). Google pasó a un esquema de prepago. Los modelos Flash-Lite actuales cuestan USD 0,25–0,30 / 1,50–2,50 por millón: entre 2 y 4 veces más que Groq para este uso.
-- **Claude Haiku 5.5:** USD 0,10 / 0,50 por millón, precio parecido a Groq. Requiere un adaptador chico en `engine.ts`.
+- **Claude Haiku 5.5:** USD 0,10 / 0,50 por millón (hasta 100.000 tokens por pedido). Para este uso da ~USD 0,32 cada 1.000 mensajes contra ~USD 0,45 de Groq: un 30 % menos, pero la diferencia son centavos. Los créditos de la API se cargan aparte de la suscripción de claude.ai. Requiere sumar el SDK de Anthropic a `engine.ts`.
 
 Recomendación: **Groq Developer con `openai/gpt-oss-120b`**. En las pruebas respondió en ~1,3 s, recomendó el producto correcto y solo agregó al carrito cuando se lo pidieron. El modelo de 20b cuesta la mitad, pero en la primera prueba recomendó un alimento genérico habiendo uno para castrados y agregó al carrito sin que se lo pidieran. Eso fue antes de afinar las instrucciones y no lo volví a probar después, así que no está descartado.
 
@@ -177,6 +177,35 @@ Ver `.env.example`. Las que hay que cargar en Netlify:
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_BASE_URL`, `MP_ACCESS_TOKEN`, `NEXT_PUBLIC_MP_PUBLIC_KEY`, `MP_WEBHOOK_SECRET`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_REASONING_EFFORT`, y para WhatsApp `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE`, `TRANSFER_ALIAS`.
 
 `SESSION_SECRET` ya no se usa.
+
+---
+
+## 8. Actualización del 2026-10-09 (segunda pasada)
+
+Decisiones tomadas: se va por el escenario **recomendado** (Netlify + Supabase + Groq + VPS para WhatsApp) y **MercadoPago queda apagado** por la comisión.
+
+Hecho en esta pasada:
+
+- **Transferencia** es un medio de pago propio. El pedido queda "Esperando el pago", muestra monto y alias, y un botón para mandar el comprobante por WhatsApp. El admin marca "pago recibido" y eso confirma el pedido.
+- **MercadoPago apagado** con `NEXT_PUBLIC_ENABLE_MERCADOPAGO`. Todo el código sigue ahí y testeado: se prende con una variable.
+- **Avisos por WhatsApp al cliente** cuando el admin marca el pago, pasa el pedido a preparación, en camino, entregado o lo cancela. Aviso opcional al dueño por cada pedido nuevo (`OWNER_WHATSAPP`).
+- **Panel:** "Mi cuenta → cambiar contraseña", menú usable en celular.
+- **Tienda:** las categorías vacías no se muestran; página de botón de arrepentimiento.
+- **Netlify:** variables de producción cargadas (base por el pooler, Supabase, IA, alias). Node 22.
+- **CI:** los workflows estaban rotos desde siempre (Node 20, secrets que no existían). Arreglados y simplificados.
+- **VPS:** `infra/evolution/` tiene el compose de producción, la guía paso a paso y la página para vincular el teléfono.
+
+Del plan original quedan resueltos los módulos 0 y 1. El módulo 3 (MercadoPago) queda en pausa.
+
+Pendiente del lado del dueño:
+
+1. Cambiar la contraseña del admin (Mi cuenta).
+2. Pasar Groq al plan Developer (pago por uso): con el gratis el chat atiende ~4 mensajes por minuto.
+3. Decidir qué número manda los WhatsApp. Conviene el de la tienda, no uno personal.
+4. Contratar el VPS y seguir `infra/evolution/README.md`.
+5. Registrar el dominio.
+6. Cargar descripciones, más fotos y precios "antes".
+7. Términos y condiciones y política de privacidad (necesitan razón social y CUIT).
 
 ## Fuentes de precios
 
