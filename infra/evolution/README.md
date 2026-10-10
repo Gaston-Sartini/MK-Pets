@@ -1,5 +1,8 @@
 # WhatsApp en producción (Evolution API en un VPS)
 
+> ¿Sin presupuesto? Hay una variante gratuita en Google Cloud, más ajustada de
+> recursos: [README-google-cloud.md](README-google-cloud.md).
+
 El sitio manda los WhatsApp llamando a Evolution API. En tu PC corre en
 `localhost:8085`; para producción tiene que estar en un servidor prendido 24/7
 con HTTPS, porque Netlify le pega desde internet.
