@@ -28,7 +28,7 @@ jobs:
       # Deploy de borrador (sin --prod): Netlify devuelve una URL única y no toca
       # el sitio publicado. Usa las variables de entorno configuradas en Netlify.
       - name: Build & deploy preview
-        run: npx netlify-cli@26 deploy --build --site=${{ secrets.NETLIFY_SITE_ID }} --message "PR #${{ github.event.pull_request.number }}"
+        run: npx netlify-cli@26 deploy --build --site=${{ secrets.NETLIFY_SITE_ID }} --message "PR ${{ github.event.pull_request.number }}"
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID:    ${{ secrets.NETLIFY_SITE_ID }}
