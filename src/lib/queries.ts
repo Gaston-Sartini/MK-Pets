@@ -1,24 +1,34 @@
 import { supabase } from './supabase'
+import { prisma } from './prisma'
 import type { Product } from '@/types'
 
 // Supabase select for product cards (no description)
 const PRODUCT_CARD_SELECT =
-  'id, name, slug, images, basePrice, badge, isFeatured, stock, ' +
+  'id, name, slug, images, basePrice, originalPrice, badge, isFeatured, stock, ' +
   'category:Category ( id, name, slug, emoji ), ' +
-  'variants:ProductVariant ( id, label, price, stock )'
+  'variants:ProductVariant ( id, label, price, originalPrice, stock )'
 
 // Supabase select for product detail page (adds description)
 const PRODUCT_DETAIL_SELECT = PRODUCT_CARD_SELECT + ', description'
+
+/** Parse a Supabase numeric (returned as string) → number | null. */
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null
+  const n = typeof v === 'number' ? v : parseFloat(String(v))
+  return Number.isFinite(n) ? n : null
+}
 
 function serializeProduct(p: any): Product {
   return {
     ...p,
     description: p.description ?? null,
-    basePrice: parseFloat(p.basePrice),
+    basePrice: num(p.basePrice) ?? 0,
+    originalPrice: num(p.originalPrice),
     badge: (p.badge as Product['badge']) ?? null,
     variants: (p.variants ?? []).map((v: any) => ({
       ...v,
-      price: parseFloat(v.price),
+      price: num(v.price) ?? 0,
+      originalPrice: num(v.originalPrice),
     })),
   }
 }
@@ -129,15 +139,23 @@ export async function getProducts(opts: {
   return { products: page.map(serializeProduct), nextCursor }
 }
 
-/** Todas las categorías ordenadas para la barra de navegación */
+/**
+ * Categorías para la navegación de la tienda, en orden. Solo las que tienen al
+ * menos un producto activo: una categoría vacía lleva al cliente a una página
+ * sin nada para comprar. (El panel admin las lista todas por su propia ruta.)
+ */
 export async function getCategories() {
   const { data, error } = await supabase
     .from('Category')
-    .select('id, name, slug, emoji, order')
+    .select('id, name, slug, emoji, order, products:Product ( count )')
+    .eq('products.isActive', true)
     .order('order', { ascending: true })
 
   if (error) throw new Error(error.message)
-  return data ?? []
+  return ((data ?? []) as any[])
+    .filter(c => (c.products?.[0]?.count ?? 0) > 0)
+    .map(({ products: _products, ...category }) => category) as
+      { id: string; name: string; slug: string; emoji: string | null; order: number }[]
 }
 
 /** Una categoría por slug — para metadata de página */
@@ -195,39 +213,31 @@ export async function getRelatedProducts(
 
 /**
  * Pedido por número con todos sus ítems.
+ *
+ * Va por Prisma (conexión directa del servidor) y no por la anon key: los
+ * pedidos tienen datos personales y RLS bloquea su lectura pública.
  */
 export async function getOrderByNumber(orderNumber: string) {
-  const { data: order, error } = await supabase
-    .from('Order')
-    .select(`
-      id, orderNumber, status, paymentMethod, paymentStatus,
-      customerName, address, phone, notes, total, canModifyUntil, createdAt,
-      items:OrderItem (
-        id, quantity, unitPrice, variantLabel,
-        product:Product ( id, name, images, slug )
-      )
-    `)
-    .eq('orderNumber', orderNumber)
-    .single()
+  const order = await prisma.order.findUnique({
+    where:  { orderNumber },
+    select: {
+      id: true, orderNumber: true, status: true, paymentMethod: true, paymentStatus: true,
+      customerName: true, address: true, phone: true, notes: true, total: true,
+      canModifyUntil: true, createdAt: true,
+      items: {
+        select: {
+          id: true, quantity: true, unitPrice: true, variantLabel: true,
+          product: { select: { id: true, name: true, images: true, slug: true } },
+        },
+      },
+    },
+  })
 
-  if (error || !order) return null
+  if (!order) return null
 
   return {
     ...order,
-    total:          parseFloat(order.total as string),
-    canModifyUntil: order.canModifyUntil as string,
-    createdAt:      order.createdAt as string,
-    items: (order.items as any[]).map(i => ({
-      id:           i.id,
-      quantity:     i.quantity,
-      unitPrice:    parseFloat(i.unitPrice),
-      variantLabel: i.variantLabel,
-      product: {
-        id:     i.product.id,
-        name:   i.product.name,
-        images: i.product.images,
-        slug:   i.product.slug,
-      },
-    })),
+    total: Number(order.total),
+    items: order.items.map(i => ({ ...i, unitPrice: Number(i.unitPrice) })),
   }
 }

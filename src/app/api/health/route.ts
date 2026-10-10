@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 // SRE: health check endpoint — monitored by UptimeRobot every 5 min
 // Returns 200 only when ALL critical dependencies are reachable.
@@ -25,11 +26,10 @@ export async function GET() {
     await prisma.$queryRaw`SELECT 1`
     checks.push({ name: 'database', status: 'ok', latencyMs: Date.now() - dbStart })
   } catch (err) {
-    checks.push({
-      name:   'database',
-      status: 'error',
-      error:  err instanceof Error ? err.message : 'unknown',
-    })
+    // El detalle va al log, no a la respuesta: este endpoint es público y el
+    // mensaje de Prisma incluye el host de la base.
+    logger.error('Health check: database unreachable', { error: err instanceof Error ? err.message : String(err) })
+    checks.push({ name: 'database', status: 'error', error: 'unreachable' })
   }
 
   // ── MP API reachability (lightweight — no auth required) ──────────────────

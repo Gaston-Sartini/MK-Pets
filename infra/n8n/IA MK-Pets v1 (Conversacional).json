@@ -1,0 +1,390 @@
+{
+  "name": "Typebot IA MK-Pets v2 (Conversacional)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mk-pets-chat-v2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        0
+      ],
+      "webhookId": "mkp-v2-webhook-9eab0db3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input compacto al LLM Understand: el mensaje del cliente + contexto\n// (productos mostrados recientemente y última pregunta del bot).\n// El catálogo está hardcoded en el system prompt → ahorra tokens.\nconst wh = $input.first().json;\nconst message = (wh.body && wh.body.message) || wh.message || '';\nconst sessionId = (wh.body && wh.body.sessionId) || wh.sessionId || 'anon';\n\nconst sd = $getWorkflowStaticData('global');\nsd.shownProducts = sd.shownProducts || {};\nsd.botQuestions  = sd.botQuestions  || {};\n\nconst shown        = sd.shownProducts[sessionId] || [];\nconst lastQuestion = sd.botQuestions[sessionId]  || '';\n\n// Resumen para el LLM (solo nombres + index, evita tokens innecesarios)\nconst shownSummary = shown.length\n  ? shown.map((p, i) => (i + 1) + '. ' + p.name).join('; ')\n  : '(ninguno todavía)';\n\nconst lines = [\n  'Mensaje del cliente: \"' + message + '\"',\n  'Productos mostrados en turnos recientes: ' + shownSummary,\n];\nif (lastQuestion) lines.push('Última pregunta que hizo el bot: \"' + lastQuestion + '\"');\n\nreturn [{\n  json: {\n    message, sessionId,\n    understandInput: lines.join('\\n'),\n    shownProducts: shown,\n    lastBotQuestion: lastQuestion,\n  }\n}];"
+      },
+      "id": "code-build-understand",
+      "name": "Build Understand Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.understandInput }}",
+        "options": {
+          "systemMessage": "Clasificás mensajes de un chat de tienda de mascotas. Devolvés SIEMPRE un JSON con esta forma exacta:\n\n{\"intent\":\"search|category|promos|chat|add_to_cart|follow_up\",\"category_slug\":\"gatos|perros|snacks|humedos|higiene|ropa|juguetes|null\",\"search_query\":\"<keywords sin stopwords>\",\"add_to_cart_hint\":\"<palabra clave del producto a agregar, o vacío>\",\"reasoning\":\"<1 línea>\"}\n\nREGLA DE ORO: preferí \"search\" sobre \"category\" cuando puedas inferir KEYWORDS específicas. \"category\" SOLO cuando el cliente quiere una VITRINA general.\n\nCatálogo (slug = ejemplos de productos):\ngatos = Royal Canin, Pro Plan Castrado\nperros = Pro Plan Razas Medianas, Pedigree Carne, Eukanuba\nsnacks = Dentastix, Temptations\nhumedos = Whiskas Atún, Pedigree Húmedo Pollo\nhigiene = Pipicat Arena, Shampoo Neutro\nropa = (sin productos por ahora)\njuguetes = Pelota Goma, Varita Plumas para Gatos\n\nTe llega también el contexto previo (lastShownProducts, lastBotQuestion) cuando hay turnos previos. Usalo para no romper el hilo.\n\nDecisión por intent:\n\n1) \"chat\" — saludo/charla/agradecimiento/off-topic (\"hola\",\"gracias\",\"todo bien\",\"cuanto cuesta el envio\",\"como va eso\"). search_query:\"\", category_slug:null, add_to_cart_hint:\"\".\n\n2) \"promos\" — ofertas/promos/rebajas/liquidaciones. Si menciona categoría seteala.\n\n3) \"add_to_cart\" — el cliente PIDE agregar un producto al carrito.\n   Patrones de frase típicos:\n   - \"dale agregalo\" / \"agregalo\" / \"sumalo\" / \"lo quiero\" → agrega el ÚLTIMO producto mostrado.\n   - \"agregame X\" / \"sumame X\" / \"dale y X también\" / \"quiero X tambien\" → agrega el producto que matchea X.\n   - Para add_to_cart, llená add_to_cart_hint con la palabra clave que identifica al producto que pide\n     (ej \"varita\",\"pelota\",\"shampoo\",\"whiskas\",\"royal\",\"pipicat\"). Si solo dice \"agregalo\" sin\n     especificar, add_to_cart_hint:\"_last\" (palabra reservada para \"el último mostrado\").\n   - NO uses add_to_cart si no hay productos mostrados antes (no hay nada que agregar).\n     En ese caso devolvé intent=\"chat\" pidiendo qué busca.\n\n4) \"follow_up\" — el cliente responde a una PREGUNTA que el bot le hizo en el turno anterior.\n   Detectás esto cuando lastBotQuestion existe Y el mensaje del cliente es una respuesta natural a esa pregunta.\n   Ejemplos:\n   - bot pregunta \"¿Para qué edad?\" → cliente dice \"Cachorro\"/\"Adulto\"/\"Senior\"\n   - bot pregunta \"¿Cuánto pesa?\" → cliente dice \"5 kilos\"/\"chiquito\"\n   - bot pregunta \"¿Es perro o gato?\" → cliente dice \"perro\"/\"gato\"\n   En follow_up, search_query debe COMBINAR la query previa con el modifier que dijo el cliente.\n   Ej: prev query=\"varita\", bot preguntó \"¿para qué edad?\", cliente dice \"cachorro\" → search_query:\"varita cachorro\".\n   category_slug puede mantenerse si era relevante.\n\n5) \"search\" (preferido cuando hay pistas): marca, formato, atributo, problema, parte del cuerpo, acción.\n   Mapeos típicos:\n   - \"baño/bañar/lavar/pelo/champu\" → search_query:\"shampoo\", category_slug:\"higiene\"\n   - \"arena/sanitaria\" → search_query:\"arena\", category_slug:\"higiene\"\n   - \"jugar/aburrido/morder\" → search_query:\"juguete pelota varita\", category_slug:\"juguetes\"\n   - \"abrigo/ropa/frío\" → category_slug:\"ropa\"\n   - \"dientes/sarro\" → search_query:\"dentastix\", category_slug:\"snacks\"\n   - \"premio/galletita/snack\" → category_slug:\"snacks\"\n   - \"humedo/lata/sachet\" → search_query:\"humedo\", category_slug:\"humedos\"\n   Si el cliente menciona atributo + mascota, search_query lleva el atributo Y category_slug la mascota.\n   Ej: \"shampoo perro\" → search_query:\"shampoo\", category_slug:\"higiene\".\n\n6) \"category\" SOLO en casos genéricos sin más data:\n   - \"que tenes para gato\" → gatos\n   - \"comida para perro\" → perros\n   - \"que hay de juguetes\" → juguetes\n\nsearch_query reglas:\n- Máximo 4 palabras.\n- NUNCA incluye: \"para\",\"de\",\"el\",\"la\",\"los\",\"las\",\"perro\",\"gato\",\"perros\",\"gatos\",\"mi\",\"tu\",\"busco\",\"quiero\",\"tenés\",\"tiene\",\"necesito\".\n- Solo sustantivos relevantes Y marcas (royal, pedigree, whiskas, pro plan, pipicat, eukanuba, purina, dentastix, temptations).\n\ncategory_slug VÁLIDOS: gatos, perros, snacks, humedos, higiene, ropa, juguetes. Nada más.\n\nSalida = SOLO el JSON. Sin markdown, sin texto extra."
+        }
+      },
+      "id": "agent-understand",
+      "name": "AI Agent Understand",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        -256,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "model-understand",
+      "name": "Groq Model Understand",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        272
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "CYZbXLPJGbNDHfrX",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body?.sessionId ?? 'anon' }}",
+        "contextWindowLength": 6
+      },
+      "id": "memory-understand",
+      "name": "Memory Understand",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        -144,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output ?? $json.text ?? $json;\nlet u;\ntry { u = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { u = {}; }\n\nconst validIntents = ['search','category','promos','chat','add_to_cart','follow_up'];\nconst intent = validIntents.includes(u.intent) ? u.intent : 'chat';\nconst categorySlug = ['gatos','perros','snacks','humedos','higiene','ropa','juguetes'].includes(u.category_slug) ? u.category_slug : null;\nconst searchQuery = typeof u.search_query === 'string' ? u.search_query.trim() : '';\nconst addToCartHint = typeof u.add_to_cart_hint === 'string' ? u.add_to_cart_hint.trim() : '';\n\nconst detect = $('Build Understand Input').first().json;\nconst { message, sessionId, shownProducts, lastBotQuestion } = detect;\n\n// Decide qué RPC llamar.\n// add_to_cart NO llama RPC (no se busca nada nuevo, se agrega un producto ya visto).\n// follow_up reuse search con la query combinada del Understand.\nlet rpcName, rpcBody;\nif (intent === 'add_to_cart') {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 0, category_slug: null };\n} else if (intent === 'promos') {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 6, category_slug: categorySlug };\n} else if (intent === 'category' && categorySlug) {\n  rpcName = 'products_by_category';\n  rpcBody = { category_slug: categorySlug, limit_n: 6 };\n} else if (intent === 'search' || intent === 'follow_up') {\n  rpcName = 'search_product_with_alternatives';\n  rpcBody = { query: searchQuery || message };\n} else {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 0, category_slug: null };\n}\n\nreturn [{\n  json: {\n    message, sessionId, intent, categorySlug, searchQuery, addToCartHint,\n    rpcName, rpcBody,\n    shownProducts, lastBotQuestion,\n    understanding: { intent, category_slug: categorySlug, search_query: searchQuery, add_to_cart_hint: addToCartHint, reasoning: u.reasoning || '' },\n  }\n}];"
+      },
+      "id": "code-parse-understand",
+      "name": "Decide RPC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ctttonxivmozsqegzotb.supabase.co/rest/v1/rpc/{{ $json.rpcName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_ANON_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.rpcBody) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "http-rpc",
+      "name": "Supabase RPC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Toma el response del Supabase RPC, arma cards normalizadas, elige\n// apertura rotativa y resuelve add_to_cart contra productos previos.\nconst all = $input.all();\nconst wrapper = all[0] ? all[0].json : null;\nconst body = wrapper && Object.prototype.hasOwnProperty.call(wrapper, 'body') ? wrapper.body : wrapper;\nconst detect = $('Decide RPC').first().json;\n\nfunction compact(p) {\n  if (!p || !p.id) return null;\n  return {\n    productId: p.id, name: p.name, slug: p.slug,\n    basePrice: Number(p.basePrice),\n    originalPrice: p.originalPrice == null ? null : Number(p.originalPrice),\n    stock: Number(p.stock || 0),\n    badge: p.badge || null,\n    image: Array.isArray(p.images) && p.images[0] ? p.images[0] : '',\n    isFeatured: !!p.isFeatured,\n  };\n}\n\nlet products = [];\nif (detect.intent === 'add_to_cart' || detect.intent === 'chat') {\n  products = []; // no se buscan productos nuevos\n} else if (detect.intent === 'search' || detect.intent === 'follow_up') {\n  const exact = body && body.exact ? compact(body.exact) : null;\n  const alts  = body && Array.isArray(body.alternatives) ? body.alternatives.map(compact).filter(Boolean) : [];\n  products = exact ? [exact, ...alts.slice(0, 2)] : alts.slice(0, 3);\n} else {\n  const arr = Array.isArray(body) ? body : [];\n  products = arr.slice(0, 3).map(compact).filter(Boolean);\n}\n\nconst BADGE_MAP = { new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO' };\nconst cards = products.map(p => ({\n  productId: p.productId, variantLabel: null,\n  name: p.name, image: p.image, slug: p.slug,\n  unitPrice: p.basePrice, originalPrice: p.originalPrice,\n  badge: BADGE_MAP[p.badge] || null, stock: p.stock,\n  ctaLabel: 'Agregar al carrito', ctaAction: 'addToCart',\n  productUrl: '/producto/' + p.slug,\n}));\n\n// ── ROTACIÓN DE APERTURAS ───────────────────────────────────────────\nconst ALL_OPENINGS = [\"Este te va a copar 👌\",\"Mirá, te tiro uno que anda bárbaro\",\"Justo tenemos este, está saliendo bocha\",\"Encontré esto, es furor 🔥\",\"Tengo este re bueno\",\"Andá probando este, va a fondo\",\"Te traigo dos opciones bárbaras\",\"Este es uno de los que más vuelan\",\"Probá con este, no falla\",\"Hay este que es un golazo\",\"Cae bien este 👇\",\"Tenemos este de la línea premium\",\"Te dejo este, es de los mejores\",\"Este lo recomiendo siempre\",\"Andá con este que es lo más\"];\nconst sd = $getWorkflowStaticData('global');\nsd.openingHistory = sd.openingHistory || {};\nsd.shownProducts  = sd.shownProducts  || {};\nconst usedRecently = sd.openingHistory[detect.sessionId] || [];\nconst available = ALL_OPENINGS.filter(o => !usedRecently.includes(o));\nconst pool = available.length ? available : ALL_OPENINGS;\nconst suggestedOpening = pool[Math.floor(Math.random() * pool.length)];\nif (cards.length) {\n  sd.openingHistory[detect.sessionId] = [suggestedOpening, ...usedRecently].slice(0, 3);\n}\n\n// ── ADD-TO-CART RESOLVER ────────────────────────────────────────────\n// Si el cliente pidió agregar algo, lo matcheamos contra los productos\n// mostrados en turnos previos (los del staticData) por:\n//   1) hint exacto del LLM (palabra clave: 'varita','pelota',etc.)\n//   2) o '_last' → el primero de la lista (más reciente)\n// El resultado va en actions[]; el frontend lo ejecuta sin click.\nconst actions = [];\nif (detect.intent === 'add_to_cart') {\n  const previous = detect.shownProducts || [];\n  const hintRaw = (detect.addToCartHint || '').toLowerCase().trim();\n  let target = null;\n  if (hintRaw === '_last' || hintRaw === '') {\n    target = previous[0] || null;\n  } else {\n    // Buscar el primer producto cuyo nombre contenga alguna palabra del hint\n    const hintWords = hintRaw.split(/\\s+/).filter(w => w.length >= 3);\n    for (const p of previous) {\n      const n = (p.name || '').toLowerCase();\n      if (hintWords.some(w => n.includes(w))) { target = p; break; }\n    }\n    // Fallback al último mostrado si el hint no matcheó\n    if (!target) target = previous[0] || null;\n  }\n  if (target) {\n    actions.push({\n      type: 'addToCart',\n      productId: target.productId,\n      name: target.name,\n      image: target.image || '',\n      slug: target.slug,\n      unitPrice: Number(target.unitPrice),\n      variantLabel: null,\n    });\n  }\n}\n\n// ── TRACKING DE PRODUCTOS MOSTRADOS ─────────────────────────────────\n// Actualizamos shownProducts ANTES de pasar al Compose, pero solo\n// merge: si en este turno hay cards nuevas, las pusheamos al frente y\n// truncamos a 5. Si no hay cards (chat/add_to_cart), no tocamos.\nif (cards.length) {\n  const compactCards = cards.map(c => ({\n    productId: c.productId, name: c.name, slug: c.slug,\n    image: c.image, unitPrice: c.unitPrice,\n  }));\n  const prev = sd.shownProducts[detect.sessionId] || [];\n  // Dedupe por productId\n  const seen = new Set(compactCards.map(c => c.productId));\n  const merged = [...compactCards, ...prev.filter(p => !seen.has(p.productId))];\n  sd.shownProducts[detect.sessionId] = merged.slice(0, 5);\n}\n\nconst composeInput = {\n  userMessage: detect.message,\n  understanding: detect.understanding,\n  products: products.map(p => ({ name: p.name, slug: p.slug, price: p.basePrice, badge: p.badge })),\n  suggestedOpening,\n  // Si vamos a ejecutar acciones, le decimos al LLM para que la copy lo refleje\n  pendingActions: actions.length ? actions.map(a => ({ type: a.type, name: a.name })) : [],\n};\n\nreturn [{\n  json: { ...detect, cards, actions, composeInput, suggestedOpening }\n}];"
+      },
+      "id": "code-build-compose",
+      "name": "Build Compose Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json.composeInput) }}",
+        "options": {
+          "systemMessage": "Sos el Vendedor Estrella de MK-Pets, tienda de mascotas en Buenos Aires. Cálido, argentino, copado. Hablás de vos.\n\nInput que te llega (JSON string): { userMessage, understanding, products[], suggestedOpening, pendingActions[] }.\n\nOUTPUT (SOLO este JSON, sin markdown):\n{\"reply\":\"<1-2 líneas naturales argentinas>\",\"suggestions\":[\"<resp1>\",\"<resp2>\"]}\n\n# Cómo responder\n\n## Si pendingActions[] tiene acciones (el backend ya agregó cosas al carrito)\nPRIORIDAD MÁXIMA. Confirmá la acción + pregunta de upsell. Variá:\n- \"Listo, te sumé la <Name> al carrito 🛒. ¿Algo más?\"\n- \"Dale, te lo agregué 👌. ¿Algo más para tu mascota?\"\n- \"Ya te lo sumé. ¿Querés algo para acompañar?\"\n- \"Listo! ¿Algo más o vamos al checkout?\"\nNO menciones productos como cards porque cards va vacío.\nsuggestions tipo: [\"Algo más para acompañar\",\"Ir al carrito\"] o [\"Sí, mostrame snacks\",\"No, gracias\"].\n\n## Si products tiene cards (sin pendingActions):\n1. ARRANCÁ tu reply con la frase EXACTA del campo suggestedOpening (o casi idéntica).\n2. Podés mencionar el producto con su nombre real si suma contexto.\n3. Cerrá con UNA pregunta de vendedor variable:\n   - \"¿Te sirve?\" / \"¿Te lo agrego?\" / \"¿Va por ahí?\" / \"¿Querés que te muestre otro?\"\n   - Si hay pista del problema: \"¿Para qué edad?\" / \"¿Cuánto pesa?\" / \"¿Pelo largo o corto?\"\n4. suggestions = 2 respuestas POSIBLES del cliente a tu pregunta:\n   - \"¿Te lo agrego?\" → [\"Sí, agregalo\",\"Mostrame otra opción\"]\n   - \"¿Cuánto pesa?\" → [\"Es chiquito\",\"Pesa más de 10kg\"]\n   - \"¿Para qué edad?\" → [\"Cachorro\",\"Adulto\"]\n\n## Si products está VACÍO Y NO hay pendingActions\nNUNCA digas \"no hay\". Empatizá + pedí más data útil. Variá entre:\n- \"Uy, ese justo no me queda 😕 contame un poco más\"\n- \"Mmm, así no encuentro nada. ¿Es para perro o gato?\"\n- \"No te puedo asegurar eso. ¿Tenés algún producto en mente?\"\nsuggestions con disparadores específicos a la consulta.\n\n## Si understanding.intent === \"chat\"\nNO menciones productos.\n- Saludo: \"Re bien, acá pa' ayudarte 🐾 ¿qué necesitás?\" / \"Hola! ¿qué andás buscando?\" / \"Buenas! contame\"\n- Agradecimiento: \"De nada, cuando quieras 🐾\" / \"Dale, a las órdenes\"\n- Off-topic: respondé corto/amable + redirigí: \"Andá a saber, contame qué buscás para tu mascota\"\n- Pregunta abierta: pedí contexto: \"Dale, contame qué mascota tenés y para qué\"\nsuggestions con disparadores reales: [\"Alimento perro\",\"Ver ofertas\",\"Snacks\",\"Juguetes\",\"Arena\",\"Shampoo\"].\n\n# Reglas DURAS\n- 1-2 líneas. La card ya muestra nombre y precio.\n- NO listes precios en el reply.\n- NO inventes productos que no están en \"products\" ni en \"pendingActions\".\n- NO uses \"Estimado\", \"Cordialmente\", \"Saludos cordiales\".\n- Emoji: máximo 1 por mensaje.\n- PROHIBIDO: \"Mirá, tengo esto que te puede venir 👇\" (suena a bot)."
+        }
+      },
+      "id": "agent-compose",
+      "name": "AI Agent Compose Reply",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        624,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "model-compose",
+      "name": "Groq Model Compose",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        624,
+        272
+      ],
+      "credentials": {
+        "groqApi": {
+          "id": "CYZbXLPJGbNDHfrX",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body?.sessionId ?? 'anon' }}-compose",
+        "contextWindowLength": 6
+      },
+      "id": "memory-compose",
+      "name": "Memory Compose",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [
+        752,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output ?? $json.text ?? $json;\n\nfunction extractJson(input) {\n  if (typeof input !== 'string') return input;\n  let s = input.trim();\n  const tickRe = new RegExp('^' + String.fromCharCode(96).repeat(3) + '(?:json)?\\\\s*([\\\\s\\\\S]*?)\\\\s*' + String.fromCharCode(96).repeat(3) + '\\\\s*$', 'i');\n  const m = s.match(tickRe);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (_) {}\n  const start = s.indexOf('{');\n  if (start === -1) return null;\n  let depth = 0, inStr = false, esc = false;\n  for (let i = start; i < s.length; i++) {\n    const c = s[i];\n    if (esc) { esc = false; continue; }\n    if (c === '\\\\') { esc = true; continue; }\n    if (c === '\"') inStr = !inStr;\n    if (inStr) continue;\n    if (c === '{') depth++;\n    else if (c === '}') {\n      depth--;\n      if (depth === 0) { try { return JSON.parse(s.slice(start, i + 1)); } catch (_) { return null; } }\n    }\n  }\n  return null;\n}\n\nlet r = (typeof raw === 'string' ? extractJson(raw) : raw) || {};\nif (typeof r === 'string') r = extractJson(r) || {};\nconst ctx = $('Build Compose Input').first().json;\n\nlet reply = (typeof r.reply === 'string' && r.reply.trim())\n  ? r.reply.trim()\n  : '¿Querés que te muestre algo en particular? 🐾';\n\n// Si el LLM ignoró la apertura sugerida y arrancó con la frase prohibida\nconst FORBIDDEN = /^[¡]?[mM]ir[aá],?\\s+tengo esto/;\nif (FORBIDDEN.test(reply) && ctx.suggestedOpening && Array.isArray(ctx.cards) && ctx.cards.length) {\n  reply = ctx.suggestedOpening + '. ¿Te sirve?';\n}\n\n// Si vamos a ejecutar acciones (add to cart) pero el LLM no lo mencionó,\n// reemplazamos el reply por una confirmación natural.\nconst actions = Array.isArray(ctx.actions) ? ctx.actions : [];\nif (actions.length) {\n  const names = actions.map(a => a.name).join(' y ');\n  // Si el reply no menciona 'sum'/'agreg'/'list', forzamos confirmación\n  if (!/sum[ée]|agreg[ué]|list[oa]|ya te lo|al carrito/i.test(reply)) {\n    reply = 'Listo, te sumé ' + names + ' al carrito 🛒. ¿Algo más?';\n  }\n}\n\nconst suggestions = Array.isArray(r.suggestions)\n  ? r.suggestions.filter(s => typeof s === 'string' && s.trim()).slice(0, 3)\n  : [];\n\n// Persistimos la última pregunta del bot para que el siguiente turno la use\nconst sd = $getWorkflowStaticData('global');\nsd.botQuestions = sd.botQuestions || {};\nconst questionMatch = reply.match(/[¿\\?][^?]+[\\?]/);\nif (questionMatch) {\n  sd.botQuestions[ctx.sessionId] = questionMatch[0].trim();\n} else {\n  // Limpiamos si no hubo pregunta\n  sd.botQuestions[ctx.sessionId] = '';\n}\n\nreturn [{\n  json: {\n    reply,\n    cards: Array.isArray(ctx.cards) ? ctx.cards : [],\n    suggestions,\n    actions, // ← clave nueva: el frontend ejecuta esto sin click\n    _meta: {\n      intent: ctx.intent,\n      category_slug: ctx.categorySlug,\n      reasoning: ctx.understanding && ctx.understanding.reasoning,\n      suggestedOpening: ctx.suggestedOpening,\n      addToCartHint: ctx.addToCartHint,\n    }\n  }\n}];"
+      },
+      "id": "code-assemble",
+      "name": "Assemble Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-1",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Understand Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Understand Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Understand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Understand": {
+      "main": [
+        [
+          {
+            "node": "Decide RPC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Model Understand": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Understand",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Understand": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent Understand",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide RPC": {
+      "main": [
+        [
+          {
+            "node": "Supabase RPC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase RPC": {
+      "main": [
+        [
+          {
+            "node": "Build Compose Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Compose Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Compose Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Compose Reply": {
+      "main": [
+        [
+          {
+            "node": "Assemble Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Model Compose": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Compose Reply",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory Compose": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent Compose Reply",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Final": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "bc804393-ad1d-45dd-a015-a1f26c16d2c0",
+  "meta": {
+    "instanceId": "21aa5215895f0167a922bbda6075a0f5c36d0f3eecc500041c2a7b6591b61039"
+  },
+  "id": "MkPetsV2ChatFlow",
+  "tags": []
+}

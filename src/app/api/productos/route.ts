@@ -22,6 +22,6 @@ export async function GET(request: Request) {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[/api/productos] ERROR:', msg)
-    return NextResponse.json({ error: 'Error al obtener productos', detail: msg }, { status: 500 })
+    return NextResponse.json({ error: 'Error al obtener productos' }, { status: 500 })
   }
 }

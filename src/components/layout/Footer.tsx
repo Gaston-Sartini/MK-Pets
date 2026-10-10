@@ -1,14 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
-
-const CATEGORIES = [
-  { label: 'Gatos',    slug: 'gatos',    emoji: '🐱' },
-  { label: 'Perros',   slug: 'perros',   emoji: '🐶' },
-  { label: 'Snacks',   slug: 'snacks',   emoji: '🍬' },
-  { label: 'Higiene',  slug: 'higiene',  emoji: '🧴' },
-  { label: 'Juguetes', slug: 'juguetes', emoji: '🎾' },
-  { label: 'Ropa',     slug: 'ropa',     emoji: '👕' },
-]
+import { getCategories } from '@/lib/queries'
 
 const TRUST_BADGES = [
   { icon: '🔒', text: 'Compra Segura' },
@@ -17,7 +9,11 @@ const TRUST_BADGES = [
   { icon: '⭐', text: 'Productos 100% Originales' },
 ]
 
-export function Footer() {
+export async function Footer() {
+  // Read live categories — falls back to empty list on error so the footer
+  // never breaks the entire page if the DB is unreachable.
+  const categories = await getCategories().catch(() => [])
+
   return (
     <footer className="bg-mk-navy text-white">
 
@@ -72,7 +68,7 @@ export function Footer() {
             <ul className="space-y-2.5 font-body text-sm text-white/80">
               <li>
                 <a
-                  href="https://wa.me/5491166698395"
+                  href="https://wa.me/5491166698395?text=Hola!%20Quer%C3%ADa%20consultarte%20lo%20siguiente..."
                   className="flex items-center gap-2 hover:text-white transition-colors"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -93,24 +89,26 @@ export function Footer() {
           </div>
 
           {/* CATEGORÍAS */}
-          <div>
-            <h2 className="font-display font-bold text-xs uppercase tracking-widest text-white/40 mb-4">
-              Categorías
-            </h2>
-            <ul className="space-y-1.5 font-body text-sm text-white/80">
-              {CATEGORIES.map(cat => (
-                <li key={cat.slug}>
-                  <Link
-                    href={`/productos?cat=${cat.slug}`}
-                    className="flex items-center gap-1.5 hover:text-white transition-colors"
-                  >
-                    <span aria-hidden="true">{cat.emoji}</span>
-                    {cat.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {categories.length > 0 && (
+            <div>
+              <h2 className="font-display font-bold text-xs uppercase tracking-widest text-white/40 mb-4">
+                Categorías
+              </h2>
+              <ul className="space-y-1.5 font-body text-sm text-white/80">
+                {categories.slice(0, 6).map(cat => (
+                  <li key={cat.slug}>
+                    <Link
+                      href={`/productos?cat=${cat.slug}`}
+                      className="flex items-center gap-1.5 hover:text-white transition-colors"
+                    >
+                      <span aria-hidden="true">{cat.emoji ?? '🐾'}</span>
+                      {cat.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* BOTTOM BAR */}
@@ -118,7 +116,22 @@ export function Footer() {
                         flex flex-col sm:flex-row items-center justify-between
                         gap-3 text-xs font-body text-white/40">
           <span>© {new Date().getFullYear()} MK-Pets. Todos los derechos reservados.</span>
-          <span>Hecho con 🐾 en Buenos Aires, Argentina</span>
+          <Link
+            href="/arrepentimiento"
+            className="text-white/80 underline underline-offset-2 hover:text-mk-orange transition-colors"
+          >
+            Botón de arrepentimiento
+          </Link>
+          <span className="flex items-center gap-3">
+            <span>Hecho con 🐾 en Buenos Aires, Argentina</span>
+            <Link
+              href="/admin/login"
+              className="text-white/30 hover:text-mk-orange transition-colors"
+              aria-label="Panel de administración"
+            >
+              ·  Admin
+            </Link>
+          </span>
         </div>
       </div>
     </footer>

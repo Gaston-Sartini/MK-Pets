@@ -28,7 +28,7 @@ export const deliveryFormSchema = z.object({
 export type DeliveryFormData = z.infer<typeof deliveryFormSchema>
 
 export const createOrderSchema = z.object({
-  paymentMethod: z.enum(['MERCADOPAGO', 'CASH_ON_DELIVERY']),
+  paymentMethod: z.enum(['TRANSFER', 'CASH_ON_DELIVERY', 'MERCADOPAGO']),
   customerName:  z.string().min(3).max(100),
   address:       z.string().min(10).max(200),
   phone:         z.string().min(8).max(20),

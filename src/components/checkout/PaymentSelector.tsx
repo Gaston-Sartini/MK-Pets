@@ -1,26 +1,29 @@
 'use client'
 
-type PaymentMethod = 'MERCADOPAGO' | 'CASH_ON_DELIVERY'
+import { enabledPaymentMethods, type PaymentMethod } from '@/lib/shop'
 
 interface Props {
   selected: PaymentMethod | null
   onChange:  (method: PaymentMethod) => void
 }
 
-const OPTIONS: { id: PaymentMethod; icon: string; title: string; subtitle: string }[] = [
-  {
-    id:       'MERCADOPAGO',
+const OPTION_INFO: Record<PaymentMethod, { icon: string; title: string; subtitle: string }> = {
+  TRANSFER: {
+    icon:     '🏦',
+    title:    'Transferencia',
+    subtitle: 'Te pasamos el alias al confirmar. Mandás el comprobante por WhatsApp.',
+  },
+  CASH_ON_DELIVERY: {
+    icon:     '🤝',
+    title:    'Efectivo al recibir',
+    subtitle: 'Pagás en efectivo cuando te entregamos el pedido.',
+  },
+  MERCADOPAGO: {
     icon:     '💳',
     title:    'MercadoPago',
     subtitle: 'Tarjeta, débito o saldo MP — rápido y seguro',
   },
-  {
-    id:       'CASH_ON_DELIVERY',
-    icon:     '🤝',
-    title:    'Pagar al recibir',
-    subtitle: 'Efectivo o transferencia cuando llega tu pedido',
-  },
-]
+}
 
 export function PaymentSelector({ selected, onChange }: Props) {
   return (
@@ -28,12 +31,13 @@ export function PaymentSelector({ selected, onChange }: Props) {
     <fieldset className="border-0 p-0 m-0 space-y-3">
       <legend className="font-bold text-lg text-mk-dark mb-3">¿Cómo querés pagar?</legend>
 
-      {OPTIONS.map(opt => {
-        const isActive = selected === opt.id
-        const inputId  = `payment-${opt.id}`
+      {enabledPaymentMethods().map(id => {
+        const opt      = OPTION_INFO[id]
+        const isActive = selected === id
+        const inputId  = `payment-${id}`
         return (
           <label
-            key={opt.id}
+            key={id}
             htmlFor={inputId}
             className={[
               'flex items-center gap-4 p-4 rounded-card border-2 cursor-pointer transition-all',
@@ -47,9 +51,9 @@ export function PaymentSelector({ selected, onChange }: Props) {
               type="radio"
               id={inputId}
               name="paymentMethod"
-              value={opt.id}
+              value={id}
               checked={isActive}
-              onChange={() => onChange(opt.id)}
+              onChange={() => onChange(id)}
               className="sr-only"
             />
 

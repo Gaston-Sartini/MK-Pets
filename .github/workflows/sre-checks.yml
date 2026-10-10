@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Check /api/health endpoint
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" https://mk-pets.com.ar/api/health)
+          RESPONSE=$(curl -s -w "\n%{http_code}" https://mk-pets.netlify.app/api/health)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -1)
 
@@ -44,8 +44,8 @@ jobs:
         uses: treosh/lighthouse-ci-action@v11
         with:
           urls: |
-            https://mk-pets.com.ar
-            https://mk-pets.com.ar/productos
+            https://mk-pets.netlify.app
+            https://mk-pets.netlify.app/productos
           budgetPath: .github/lighthouse-budget.json
           uploadArtifacts: true
           temporaryPublicStorage: true

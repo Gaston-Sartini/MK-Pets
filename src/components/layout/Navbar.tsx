@@ -4,31 +4,36 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ShoppingCart, Search, Phone, X } from 'lucide-react'
+import { ShoppingCart, Search, X } from 'lucide-react'
 import { useCartStore } from '@/store/cart-store'
 import { cn } from '@/lib/utils'
 
-const CATEGORIES = [
-  { slug: 'gatos',    label: 'Gatos',    emoji: '🐱' },
-  { slug: 'perros',   label: 'Perros',   emoji: '🐶' },
-  { slug: 'snacks',   label: 'Snacks',   emoji: '🍬' },
-  { slug: 'humedos',  label: 'Húmedos',  emoji: '💧' },
-  { slug: 'arena',    label: 'Arena',    emoji: '🪨' },
-  { slug: 'higiene',  label: 'Higiene',  emoji: '🧴' },
-  { slug: 'ropa',     label: 'Ropa',     emoji: '👕' },
-  { slug: 'juguetes', label: 'Juguetes', emoji: '🎾' },
-]
+interface NavbarCategory {
+  slug:   string
+  name:   string
+  emoji:  string | null
+}
 
-export function Navbar() {
+interface NavbarProps {
+  categories?: NavbarCategory[]
+}
+
+export function Navbar({ categories = [] }: NavbarProps) {
   const [isScrolled,   setIsScrolled]   = useState(false)
   const [searchOpen,   setSearchOpen]   = useState(false)
   const [searchQuery,  setSearchQuery]  = useState('')
+  // Zustand persist rehidrata desde localStorage tras montar; renderizar el
+  // badge del cart antes del mount causa hydration mismatch cuando hay items
+  // guardados (SSR ve 0, client ve N).
+  const [mounted,      setMounted]      = useState(false)
 
-  const totalItems  = useCartStore(s => s.totalItems())
-  const openDrawer  = useCartStore(s => s.openDrawer)
-  const router      = useRouter()
+  const totalItemsRaw = useCartStore(s => s.totalItems())
+  const totalItems    = mounted ? totalItemsRaw : 0
+  const openDrawer    = useCartStore(s => s.openDrawer)
+  const router        = useRouter()
 
   useEffect(() => {
+    setMounted(true)
     const handler = () => setIsScrolled(window.scrollY > 8)
     window.addEventListener('scroll', handler, { passive: true })
     return () => window.removeEventListener('scroll', handler)
@@ -48,10 +53,8 @@ export function Navbar() {
       isScrolled && 'shadow-navbar'
     )}>
       {/* MICRO-BANNER */}
-      <div className="shipping-strip text-center py-1.5 text-xs gap-4 md:gap-8">
+      <div className="shipping-strip text-center py-1.5 text-xs">
         <span>🚚 <strong>Envío gratis</strong> a CABA</span>
-        <span className="hidden sm:inline">·</span>
-        <span className="hidden sm:inline">📞 11 6669 8395</span>
       </div>
 
       <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8">
@@ -105,20 +108,6 @@ export function Navbar() {
 
           {/* RIGHT ACTIONS */}
           <div className="flex items-center gap-1 md:gap-2 ml-auto">
-            {/* WhatsApp — desktop */}
-            <a
-              href="https://wa.me/5491166698395"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-pill
-                         bg-mk-light text-mk-mid text-xs font-body font-medium
-                         hover:bg-[#25D366] hover:text-white transition-all duration-200"
-              aria-label="Contactar por WhatsApp"
-            >
-              <Phone className="w-3.5 h-3.5" />
-              <span>11 6669 8395</span>
-            </a>
-
             {/* Search icon — mobile */}
             <button
               onClick={() => setSearchOpen(v => !v)}
@@ -173,25 +162,27 @@ export function Navbar() {
         )}
 
         {/* CATEGORY SUBNAV — desktop */}
-        <nav aria-label="Categorías" className="hidden md:flex items-center gap-1 pb-2 border-t border-gray-50 pt-1">
-          <Link
-            href="/productos"
-            className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
-                       text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
-          >
-            🐾 Todos
-          </Link>
-          {CATEGORIES.map(cat => (
+        {categories.length > 0 && (
+          <nav aria-label="Categorías" className="hidden md:flex items-center gap-1 pb-2 border-t border-gray-50 pt-1">
             <Link
-              key={cat.slug}
-              href={`/productos?cat=${cat.slug}`}
+              href="/productos"
               className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
                          text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
             >
-              {cat.emoji} {cat.label}
+              🐾 Todos
             </Link>
-          ))}
-        </nav>
+            {categories.map(cat => (
+              <Link
+                key={cat.slug}
+                href={`/productos?cat=${cat.slug}`}
+                className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
+                           text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
+              >
+                {cat.emoji ?? '🐾'} {cat.name}
+              </Link>
+            ))}
+          </nav>
+        )}
       </div>
     </header>
   )

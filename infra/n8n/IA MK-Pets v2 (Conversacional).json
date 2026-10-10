@@ -1,0 +1,242 @@
+{
+  "name": "IA MK-Pets v2 (Conversacional)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mk-pets-chat-v2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-v2",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-960, 0],
+      "webhookId": "mkp-v2-webhook-9eab0db3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const wh = $input.first().json;\nconst message = (wh.body && wh.body.message) || wh.message || '';\nconst sessionId = (wh.body && wh.body.sessionId) || wh.sessionId || 'anon';\n\nconst sd = $getWorkflowStaticData('global');\nsd.shownProducts = sd.shownProducts || {};\nsd.botQuestions  = sd.botQuestions  || {};\nsd.petContext    = sd.petContext    || {};\nsd.lastReplies   = sd.lastReplies   || {};\n\nconst shown        = sd.shownProducts[sessionId] || [];\nconst lastQuestion = sd.botQuestions[sessionId]  || '';\nconst petContext   = sd.petContext[sessionId]    || null;\nconst lastReplies  = sd.lastReplies[sessionId]   || [];\n\nconst shownSummary = shown.length\n  ? shown.map((p, i) => (i + 1) + '. ' + p.name).join('; ')\n  : '(ninguno todavía)';\n\nconst lines = [\n  'Mensaje del cliente: \"' + message + '\"',\n  'Productos mostrados en turnos recientes: ' + shownSummary,\n];\nif (lastQuestion) lines.push('Última pregunta que hizo el bot: \"' + lastQuestion + '\"');\nif (petContext) lines.push('Mascota del cliente (contexto persistente): ' + petContext);\nif (lastReplies.length) lines.push('Últimas respuestas del bot (NO repetir frases de apertura): ' + lastReplies.map((r, i) => (i+1) + '. ' + r).join(' | '));\n\nreturn [{\n  json: {\n    message, sessionId,\n    understandInput: lines.join('\\n'),\n    shownProducts: shown,\n    lastBotQuestion: lastQuestion,\n    petContext,\n    lastReplies,\n  }\n}];"
+      },
+      "id": "code-build-input-v2",
+      "name": "Build Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-720, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.understandInput }}",
+        "options": {
+          "systemMessage": "Clasificás mensajes de un chat de tienda de mascotas. Devolvés SIEMPRE un JSON con esta forma exacta:\n\n{\"intent\":\"search|category|promos|chat|add_to_cart|follow_up\",\"category_slug\":\"gatos|perros|snacks|humedos|higiene|ropa|juguetes|null\",\"search_query\":\"<keywords sin stopwords>\",\"add_to_cart_hint\":\"<keyword del producto o vacío>\",\"detected_species\":\"gato|perro|null\",\"show_card\":true,\"reasoning\":\"<1 línea>\"}\n\nCONTEXTO PERSISTENTE (PRIORIDAD MÁXIMA):\nSi el input incluye 'Mascota del cliente (contexto persistente): X', ese contexto PERSISTE toda la conversación.\n- detected_species DEBE ser X a menos que el cliente diga EXPLÍCITAMENTE otra cosa.\n- category_slug y search_query DEBEN ser coherentes con X.\nEjemplo: contexto='gato', mensaje='qué más tenés?' → detected_species:'gato', category_slug:'gatos'\n\nDETECTED_SPECIES:\n- 'gato': mensaje O contexto menciona gato, felino, minino, gatito, gatita, cat\n- 'perro': mensaje O contexto menciona perro, can, canino, cachorro, perrita, dog\n- null: no se puede determinar (primera interacción sin contexto)\n\nSHOW_CARD:\n- true: cliente busca activamente para comprar/ver ('busco','quiero','tenés','mostrá','qué hay','algo para')\n- false: intent='chat', O pregunta informativa ('¿es bueno X?','¿cuánto dura?','diferencia entre X e Y')\n\nCatálogo (slug → ejemplos):\ngatos = Royal Canin Gato, Pro Plan Castrado Gato\nperros = Pro Plan Razas Medianas, Pedigree Carne, Eukanuba\nsnacks = Dentastix, Temptations\nhumedos = Whiskas Atún, Pedigree Húmedo Pollo\nhigiene = Pipicat Arena, Shampoo Neutro\nropa = (sin productos)\njuguetes = Pelota Goma, Varita Plumas para Gatos\n\nDECISIÓN POR INTENT:\n\n1) 'chat' — saludo/agradecimiento/off-topic/preguntas de envío o políticas.\n   También cuando el cliente solo DECLARA que tiene una mascota sin pedir nada ('tengo gato','tengo un perro','es para mi gato','soy dueño de un gato').\n   search_query:'', category_slug:null, add_to_cart_hint:'', show_card:false.\n\n2) 'promos' — ofertas/promos/rebajas. show_card:true.\n\n3) 'add_to_cart' — el cliente pide agregar un producto al carrito.\n   Patrones: 'dale agregalo','agregalo','sumalo','lo quiero','agregame X'.\n   add_to_cart_hint: keyword del producto. '_last' si dice solo 'agregalo'.\n   NO uses add_to_cart si no hay productos mostrados → usá 'chat'.\n   show_card:false.\n\n4) 'follow_up' — responde a pregunta que el bot hizo en el turno anterior.\n   Combina query previa + modifier del cliente. Mantiene detected_species y category_slug del contexto.\n   show_card:true.\n\n5) 'search' (preferido con keywords): marca, formato, atributo, problema.\n   search_query = sustantivos sin stopwords (máx 4 palabras).\n   NUNCA incluir en search_query: para, de, el, la, los, las, perro, gato, perros, gatos, busco, quiero, necesito.\n   show_card:true si busca para comprar, false si pregunta consultivamente.\n\n6) 'category' SOLO para vitrina general sin keywords específicas:\n   'que tenes para gato','comida para perro','que hay de juguetes'. show_card:true.\n\nEJEMPLOS CLAVE:\n- 'hola' / 'buenas' → intent:'chat', detected_species:null, show_card:false\n- 'tengo gato' / 'es para mi gato' / 'tengo una gata' → intent:'chat', detected_species:'gato', show_card:false\n- 'tengo perro' / 'es para mi perro' / 'tengo un cachorro' → intent:'chat', detected_species:'perro', show_card:false\n- 'hola busco comida para gatos' → intent:'category', category_slug:'gatos', detected_species:'gato', show_card:true\n- (ctx=gato) 'qué más tenés?' → intent:'category', category_slug:'gatos', detected_species:'gato', show_card:true\n- (ctx=gato) 'algo para el pelo?' → intent:'search', search_query:'shampoo pelo', category_slug:'higiene', detected_species:'gato', show_card:true\n- '¿el royal canin es bueno?' → intent:'chat', show_card:false\n- '¿tienen envío gratis?' → intent:'chat', show_card:false\n- 'agregalo' (con productos previos) → intent:'add_to_cart', add_to_cart_hint:'_last', show_card:false\n\nMapeos search_query:\n- baño/shampoo/champu → search_query:'shampoo', category_slug:'higiene'\n- arena/sanitaria → search_query:'arena', category_slug:'higiene'\n- jugar/aburrido/morder → search_query:'juguete pelota', category_slug:'juguetes'\n- dientes/sarro → search_query:'dentastix', category_slug:'snacks'\n- humedo/lata/sachet → search_query:'humedo', category_slug:'humedos'\n\nSalida = SOLO el JSON. Sin markdown, sin texto extra."
+        }
+      },
+      "id": "agent-understand-v2",
+      "name": "AI Agent Understand",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [-480, 0]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "model-understand-v2",
+      "name": "Groq Model Understand",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [-480, 272],
+      "credentials": {
+        "groqApi": {
+          "id": "CYZbXLPJGbNDHfrX",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body?.sessionId ?? 'anon' }}",
+        "contextWindowLength": 3
+      },
+      "id": "memory-understand-v2",
+      "name": "Memory Understand",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [-368, 272]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output ?? $json.text ?? $json;\nlet u;\ntry { u = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { u = {}; }\n\nconst validIntents = ['search','category','promos','chat','add_to_cart','follow_up'];\nconst intent = validIntents.includes(u.intent) ? u.intent : 'chat';\nconst categorySlug = ['gatos','perros','snacks','humedos','higiene','ropa','juguetes'].includes(u.category_slug) ? u.category_slug : null;\nlet searchQuery = typeof u.search_query === 'string' ? u.search_query.trim() : '';\nconst addToCartHint = typeof u.add_to_cart_hint === 'string' ? u.add_to_cart_hint.trim() : '';\nconst detectedSpecies = ['gato','perro'].includes(u.detected_species) ? u.detected_species : null;\nconst showCard = typeof u.show_card === 'boolean' ? u.show_card : (intent !== 'chat' && intent !== 'add_to_cart');\n\nconst detect = $('Build Input').first().json;\nconst { message, sessionId, shownProducts, lastBotQuestion, lastReplies } = detect;\n\n// Persistir especie detectada en staticData\nconst sd = $getWorkflowStaticData('global');\nsd.petContext = sd.petContext || {};\nif (detectedSpecies) sd.petContext[sessionId] = detectedSpecies;\nconst petContext = sd.petContext[sessionId] || null;\n\n// Enriquecer search_query con la especie conocida del contexto.\n// El prompt del Understand excluye 'gato'/'perro' de la query por diseño,\n// así que lo reinyectamos aquí para que el RPC de búsqueda filtre bien.\nif (petContext && (intent === 'search' || intent === 'follow_up') && searchQuery) {\n  const qLow = searchQuery.toLowerCase();\n  if (!qLow.includes('gato') && !qLow.includes('perro') && !qLow.includes('felino') && !qLow.includes('canino')) {\n    searchQuery = petContext + ' ' + searchQuery;\n  }\n}\n\nlet rpcName, rpcBody;\nif (intent === 'add_to_cart' || intent === 'chat') {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 0, category_slug: null };\n} else if (intent === 'promos') {\n  const promoSlug = categorySlug || (petContext === 'gato' ? 'gatos' : petContext === 'perro' ? 'perros' : null);\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 6, category_slug: promoSlug };\n} else if (intent === 'category') {\n  const catSlug = categorySlug || (petContext === 'gato' ? 'gatos' : petContext === 'perro' ? 'perros' : null);\n  rpcName = 'products_by_category';\n  rpcBody = { category_slug: catSlug || 'gatos', limit_n: 6 };\n} else if (intent === 'search' || intent === 'follow_up') {\n  rpcName = 'search_product_with_alternatives';\n  rpcBody = { query: searchQuery || message };\n} else {\n  rpcName = 'top_promos';\n  rpcBody = { limit_n: 0, category_slug: null };\n}\n\nreturn [{\n  json: {\n    message, sessionId, intent, categorySlug, searchQuery, addToCartHint,\n    detectedSpecies, petContext, showCard,\n    rpcName, rpcBody,\n    shownProducts, lastBotQuestion, lastReplies,\n    understanding: {\n      intent, category_slug: categorySlug, search_query: searchQuery,\n      add_to_cart_hint: addToCartHint, detected_species: detectedSpecies,\n      show_card: showCard, reasoning: u.reasoning || ''\n    },\n  }\n}];"
+      },
+      "id": "code-enrich-context",
+      "name": "Enrich Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-240, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://ctttonxivmozsqegzotb.supabase.co/rest/v1/rpc/{{ $json.rpcName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_ANON_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_ANON_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.rpcBody) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "http-rpc-v2",
+      "name": "Supabase RPC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = $input.all();\nconst wrapper = all[0] ? all[0].json : null;\nconst body = wrapper && Object.prototype.hasOwnProperty.call(wrapper, 'body') ? wrapper.body : wrapper;\nconst detect = $('Enrich Context').first().json;\n\nfunction compact(p) {\n  if (!p || !p.id) return null;\n  return {\n    productId: p.id, name: p.name, slug: p.slug,\n    basePrice: Number(p.basePrice),\n    originalPrice: p.originalPrice == null ? null : Number(p.originalPrice),\n    stock: Number(p.stock || 0),\n    badge: p.badge || null,\n    image: Array.isArray(p.images) && p.images[0] ? p.images[0] : '',\n    isFeatured: !!p.isFeatured,\n  };\n}\n\nlet products = [];\nif (detect.intent === 'add_to_cart' || detect.intent === 'chat') {\n  products = [];\n} else if (detect.intent === 'search' || detect.intent === 'follow_up') {\n  const exact = body && body.exact ? compact(body.exact) : null;\n  const alts  = body && Array.isArray(body.alternatives) ? body.alternatives.map(compact).filter(Boolean) : [];\n  products = exact ? [exact, ...alts.slice(0, 2)] : alts.slice(0, 3);\n} else {\n  const arr = Array.isArray(body) ? body : [];\n  products = arr.slice(0, 3).map(compact).filter(Boolean);\n}\n\n// Filtro de especie: remover productos de la especie contraria a la del contexto.\n// Esto evita mostrar comida de perro cuando el usuario busca para gato.\nif (detect.petContext && products.length > 0) {\n  const sp = detect.petContext;\n  const oppKw = sp === 'gato'\n    ? ['perro','canino','eukanuba','pro plan razas','pedigree carne','pro plan perro']\n    : ['gato','felino','pipicat','whiskas','varita plumas','royal canin gato','pro plan gato'];\n  const filtered = products.filter(p => !oppKw.some(kw => (p.name||'').toLowerCase().includes(kw)));\n  if (filtered.length > 0) products = filtered;\n}\n\nconst BADGE_MAP = { new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO' };\n// Solo enviar cards si el Understand decidió show_card:true\nconst cards = (detect.showCard ? products : []).map(p => ({\n  productId: p.productId, variantLabel: null,\n  name: p.name, image: p.image, slug: p.slug,\n  unitPrice: p.basePrice, originalPrice: p.originalPrice,\n  badge: BADGE_MAP[p.badge] || null, stock: p.stock,\n  ctaLabel: 'Agregar al carrito', ctaAction: 'addToCart',\n  productUrl: '/producto/' + p.slug,\n}));\n\nconst ALL_OPENINGS = ['Este te va a copar 👌','Mirá, te tiro uno que anda bárbaro','Justo tenemos este, está saliendo bocha','Encontré esto, es furor 🔥','Tengo este re bueno','Andá probando este, va a fondo','Te traigo dos opciones bárbaras','Este es uno de los que más vuelan','Probá con este, no falla','Hay este que es un golazo','Cae bien este 👇','Tenemos este de la línea premium','Te dejo este, es de los mejores','Este lo recomiendo siempre','Andá con este que es lo más'];\nconst sd = $getWorkflowStaticData('global');\nsd.openingHistory = sd.openingHistory || {};\nsd.shownProducts  = sd.shownProducts  || {};\nconst usedRecently = sd.openingHistory[detect.sessionId] || [];\nconst available = ALL_OPENINGS.filter(o => !usedRecently.includes(o));\nconst pool = available.length ? available : ALL_OPENINGS;\nconst suggestedOpening = pool[Math.floor(Math.random() * pool.length)];\nif (cards.length) {\n  sd.openingHistory[detect.sessionId] = [suggestedOpening, ...usedRecently].slice(0, 3);\n}\n\nconst actions = [];\nif (detect.intent === 'add_to_cart') {\n  const previous = detect.shownProducts || [];\n  const hintRaw = (detect.addToCartHint || '').toLowerCase().trim();\n  let target = null;\n  if (hintRaw === '_last' || hintRaw === '') {\n    target = previous[0] || null;\n  } else {\n    const hintWords = hintRaw.split(/\\s+/).filter(w => w.length >= 3);\n    for (const p of previous) {\n      const n = (p.name || '').toLowerCase();\n      if (hintWords.some(w => n.includes(w))) { target = p; break; }\n    }\n    if (!target) target = previous[0] || null;\n  }\n  if (target) {\n    actions.push({\n      type: 'addToCart', productId: target.productId, name: target.name,\n      image: target.image || '', slug: target.slug,\n      unitPrice: Number(target.unitPrice), variantLabel: null,\n    });\n  }\n}\n\nif (cards.length) {\n  const compactCards = cards.map(c => ({ productId: c.productId, name: c.name, slug: c.slug, image: c.image, unitPrice: c.unitPrice }));\n  const prev = sd.shownProducts[detect.sessionId] || [];\n  const seen = new Set(compactCards.map(c => c.productId));\n  const merged = [...compactCards, ...prev.filter(p => !seen.has(p.productId))];\n  sd.shownProducts[detect.sessionId] = merged.slice(0, 5);\n}\n\nconst composeInput = {\n  userMessage: detect.message,\n  understanding: detect.understanding,\n  petContext: detect.petContext,\n  products: products.map(p => ({ name: p.name, slug: p.slug, price: p.basePrice, badge: p.badge })),\n  showCard: detect.showCard,\n  suggestedOpening,\n  pendingActions: actions.length ? actions.map(a => ({ type: a.type, name: a.name })) : [],\n  lastReplies: detect.lastReplies || [],\n};\n\nreturn [{ json: { ...detect, cards, actions, composeInput, suggestedOpening } }];"
+      },
+      "id": "code-build-compose-v2",
+      "name": "Build Compose Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ JSON.stringify($json.composeInput) }}",
+        "options": {
+          "systemMessage": "Sos el Vendedor Estrella de MK-Pets, tienda de mascotas en Buenos Aires. Cálido, argentino, copado. Hablás de vos.\n\nInput (JSON): { userMessage, understanding, petContext, products[], showCard, suggestedOpening, pendingActions[], lastReplies[] }.\n\nOUTPUT (SOLO este JSON, sin markdown):\n{\"reply\":\"<1-2 líneas naturales argentinas>\",\"suggestions\":[\"<resp1>\",\"<resp2>\"]}\n\nREGLA DE ESPECIE (CRÍTICA):\n- Si petContext tiene valor ('gato' o 'perro'), los productos en products[] son para ESA especie.\n- En tu reply, nunca digas 'para tu perro' si petContext es 'gato' y viceversa.\n- Si petContext es null (primera interacción): PROHIBIDO decir 'tu perro' o 'tu gato'. Usá 'tu mascota' o no menciones especie.\n- Si los productos no coinciden con petContext, NO los presentes. Decí: 'Ese justo no lo tengo para tu gato, ¿querés que te muestre algo distinto?'\n\nANTI-REPETICIÓN:\n- Si lastReplies tiene datos, PROHIBIDO usar las mismas frases de apertura que aparecen ahí.\n- Variá el tono: algunas respuestas cortas, otras más elaboradas. Nunca dos turnos iguales.\n\nCÓMO RESPONDER:\n\nSi pendingActions[] tiene acciones (add to cart ya ejecutado):\nPRIORIDAD MÁXIMA. Confirmá la acción + upsell. Variá entre:\n- 'Listo, te sumé la <Name> al carrito 🛒. ¿Algo más?'\n- 'Dale, te lo agregué 👌. ¿Algo más para tu mascota?'\n- 'Ya te lo sumé. ¿Querés algo para acompañar?'\nsuggestions: ['Algo más para acompañar','Ir al carrito'] o ['Sí, mostrame snacks','No, gracias'].\n\nSi showCard es TRUE y products tiene datos:\n1. ARRANCÁ con la frase EXACTA de suggestedOpening (o casi idéntica).\n2. Podés mencionar el nombre del producto si suma contexto.\n3. Cerrá con UNA pregunta de vendedor variable:\n   '¿Te sirve?','¿Te lo agrego?','¿Va por ahí?','¿Querés que te muestre otro?'\n   Si hay pista del problema: '¿Para qué edad?','¿Cuánto pesa?','¿Pelo largo o corto?'\n4. suggestions = 2 respuestas posibles del cliente a tu pregunta.\n\nSi showCard es FALSE (pregunta informativa / chat / add_to_cart confirmado):\nRespondé con texto natural. NO menciones cards ni productos inventados.\n- Saludo sin especie conocida (petContext null): 'Re bien, acá pa ayudarte 🐾 ¿qué necesitás?' — NUNCA inventar especie.\n- El cliente declara su especie ('tengo gato', 'tengo perro'): acusá recibo y preguntá qué necesita. Ej: '¡Gato! Buenísimo 🐱 ¿qué necesitás para él?' / 'Perfecto, ¿qué buscás para tu perro?'\n- Saludo con especie ya conocida en petContext: mencionala. Ej: 'Acá estoy 🐾 ¿qué necesitás para tu gato?'\n- Pregunta informativa: 1-2 líneas útiles, luego redirigí suavemente. Ej: 'El Royal Canin anda muy bien para gatos adultos. ¿Querés que te muestre opciones?'\n- Envío: gratis con transferencia a kadir.rios. Para más info redirigí al vendedor.\n- Off-topic: corto + redirigí.\nsuggestions con disparadores reales: ['Alimento gato','Ver ofertas','Snacks','Arena'].\n\nSi showCard TRUE pero products vacío:\nNUNCA digas 'no hay'. Empatizá + pedí más data:\n- 'Uy, ese justo no me queda 😕 contame un poco más'\n- 'Mmm, así no encuentro nada. ¿Para qué raza es?'\nsuggestions con disparadores específicos.\n\nREGLAS DURAS:\n- 1-2 líneas. La card ya muestra nombre y precio → NO listes precios en el reply.\n- NO inventes productos que no están en 'products' ni en 'pendingActions'.\n- NO uses 'Estimado', 'Cordialmente', 'Saludos cordiales'.\n- Emoji: máximo 1 por mensaje.\n- PROHIBIDO: 'Mirá, tengo esto que te puede venir 👇'"
+        }
+      },
+      "id": "agent-compose-v2",
+      "name": "AI Agent Compose Reply",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "model-compose-v2",
+      "name": "Groq Model Compose",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [480, 272],
+      "credentials": {
+        "groqApi": {
+          "id": "CYZbXLPJGbNDHfrX",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body?.sessionId ?? 'anon' }}-compose",
+        "contextWindowLength": 3
+      },
+      "id": "memory-compose-v2",
+      "name": "Memory Compose",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [608, 272]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.output ?? $json.text ?? $json;\n\nfunction extractJson(input) {\n  if (typeof input !== 'string') return input;\n  let s = input.trim();\n  const tickRe = new RegExp('^' + String.fromCharCode(96).repeat(3) + '(?:json)?\\\\s*([\\\\s\\\\S]*?)\\\\s*' + String.fromCharCode(96).repeat(3) + '\\\\s*$', 'i');\n  const m = s.match(tickRe);\n  if (m) s = m[1].trim();\n  try { return JSON.parse(s); } catch (_) {}\n  const start = s.indexOf('{');\n  if (start === -1) return null;\n  let depth = 0, inStr = false, esc = false;\n  for (let i = start; i < s.length; i++) {\n    const c = s[i];\n    if (esc) { esc = false; continue; }\n    if (c === '\\\\') { esc = true; continue; }\n    if (c === '\"') inStr = !inStr;\n    if (inStr) continue;\n    if (c === '{') depth++;\n    else if (c === '}') {\n      depth--;\n      if (depth === 0) { try { return JSON.parse(s.slice(start, i + 1)); } catch (_) { return null; } }\n    }\n  }\n  return null;\n}\n\nlet r = (typeof raw === 'string' ? extractJson(raw) : raw) || {};\nif (typeof r === 'string') r = extractJson(r) || {};\nconst ctx = $('Build Compose Input').first().json;\n\nlet reply = (typeof r.reply === 'string' && r.reply.trim())\n  ? r.reply.trim()\n  : '¿Querés que te muestre algo en particular? 🐾';\n\nconst FORBIDDEN = /^[¡]?[mM]ir[aá],?\\s+tengo esto/;\nif (FORBIDDEN.test(reply) && ctx.suggestedOpening && Array.isArray(ctx.cards) && ctx.cards.length) {\n  reply = ctx.suggestedOpening + '. ¿Te sirve?';\n}\n\nconst actions = Array.isArray(ctx.actions) ? ctx.actions : [];\nif (actions.length) {\n  const names = actions.map(a => a.name).join(' y ');\n  if (!/sum[ée]|agreg[ué]|list[oa]|ya te lo|al carrito/i.test(reply)) {\n    reply = 'Listo, te sumé ' + names + ' al carrito 🛒. ¿Algo más?';\n  }\n}\n\nconst suggestions = Array.isArray(r.suggestions)\n  ? r.suggestions.filter(s => typeof s === 'string' && s.trim()).slice(0, 3)\n  : [];\n\nconst sd = $getWorkflowStaticData('global');\nsd.botQuestions = sd.botQuestions || {};\nsd.lastReplies  = sd.lastReplies  || {};\n\nconst questionMatch = reply.match(/[¿\\?][^?]+[\\?]/);\nsd.botQuestions[ctx.sessionId] = questionMatch ? questionMatch[0].trim() : '';\n\nconst prevReplies = sd.lastReplies[ctx.sessionId] || [];\nsd.lastReplies[ctx.sessionId] = [reply.slice(0, 60), ...prevReplies].slice(0, 3);\n\nreturn [{\n  json: {\n    reply,\n    cards: Array.isArray(ctx.cards) ? ctx.cards : [],\n    suggestions,\n    actions,\n    _meta: {\n      intent: ctx.intent,\n      category_slug: ctx.categorySlug,\n      petContext: ctx.petContext,\n      detected_species: ctx.detectedSpecies,\n      show_card: ctx.showCard,\n      reasoning: ctx.understanding && ctx.understanding.reasoning,\n      suggestedOpening: ctx.suggestedOpening,\n      addToCartHint: ctx.addToCartHint,\n    }\n  }\n}];"
+      },
+      "id": "code-assemble-v2",
+      "name": "Assemble Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-v2",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Build Input", "type": "main", "index": 0 }]]
+    },
+    "Build Input": {
+      "main": [[{ "node": "AI Agent Understand", "type": "main", "index": 0 }]]
+    },
+    "AI Agent Understand": {
+      "main": [[{ "node": "Enrich Context", "type": "main", "index": 0 }]]
+    },
+    "Groq Model Understand": {
+      "ai_languageModel": [[{ "node": "AI Agent Understand", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Memory Understand": {
+      "ai_memory": [[{ "node": "AI Agent Understand", "type": "ai_memory", "index": 0 }]]
+    },
+    "Enrich Context": {
+      "main": [[{ "node": "Supabase RPC", "type": "main", "index": 0 }]]
+    },
+    "Supabase RPC": {
+      "main": [[{ "node": "Build Compose Input", "type": "main", "index": 0 }]]
+    },
+    "Build Compose Input": {
+      "main": [[{ "node": "AI Agent Compose Reply", "type": "main", "index": 0 }]]
+    },
+    "AI Agent Compose Reply": {
+      "main": [[{ "node": "Assemble Final", "type": "main", "index": 0 }]]
+    },
+    "Groq Model Compose": {
+      "ai_languageModel": [[{ "node": "AI Agent Compose Reply", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Memory Compose": {
+      "ai_memory": [[{ "node": "AI Agent Compose Reply", "type": "ai_memory", "index": 0 }]]
+    },
+    "Assemble Final": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "v2-improved-species-context",
+  "meta": {
+    "instanceId": "21aa5215895f0167a922bbda6075a0f5c36d0f3eecc500041c2a7b6591b61039"
+  },
+  "id": "MkPetsV2ChatFlowImproved",
+  "tags": []
+}

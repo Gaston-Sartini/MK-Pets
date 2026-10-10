@@ -1,86 +1,95 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import crypto from 'crypto'
 import { logger } from '@/lib/logger'
+import { syncMpPayment } from '@/lib/mp-payments'
 
-function verifySignature(payload: string, signature: string, secret: string): boolean {
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex')
-  // timingSafeEqual prevents timing attacks
+/**
+ * Valida la firma de MercadoPago.
+ *
+ * MP manda `x-signature: ts=<timestamp>,v1=<hmac>` y firma este texto (no el body):
+ *   id:<data.id>;request-id:<x-request-id>;ts:<ts>;
+ * con HMAC-SHA256 usando la "clave secreta" de Tus integraciones → Webhooks.
+ * https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks
+ */
+function verifySignature(opts: {
+  signatureHeader: string
+  requestId:       string
+  dataId:          string
+  secret:          string
+}): boolean {
+  const parts = new Map(
+    opts.signatureHeader.split(',').map(p => {
+      const [k, ...v] = p.split('=')
+      return [k.trim(), v.join('=').trim()] as const
+    })
+  )
+  const ts = parts.get('ts')
+  const v1 = parts.get('v1')
+  if (!ts || !v1) return false
+
+  // MP arma el manifest solo con los valores presentes
+  let manifest = ''
+  if (opts.dataId)    manifest += `id:${opts.dataId.toLowerCase()};`
+  if (opts.requestId) manifest += `request-id:${opts.requestId};`
+  manifest += `ts:${ts};`
+
+  const expected = crypto.createHmac('sha256', opts.secret).update(manifest).digest('hex')
   try {
-    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))
+    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(v1, 'hex'))
   } catch {
     return false
   }
 }
 
 export async function POST(request: Request) {
-  const rawBody   = await request.text()
-  const signature = request.headers.get('x-signature') ?? ''
-  const secret    = process.env.MP_WEBHOOK_SECRET ?? ''
+  const url     = new URL(request.url)
+  const rawBody = await request.text()
+  const secret  = process.env.MP_WEBHOOK_SECRET ?? ''
 
-  // SECURITY: fail closed — if secret is not configured, reject all webhooks.
-  // Previously the condition `if (secret && ...)` would skip verification when secret was empty,
-  // allowing forged webhook payloads to mark orders as paid.
+  // Notificaciones IPN (formato viejo, `?topic=payment&id=...`): MP no las firma.
+  // Se responden 200 para que no las reintente; el estado del pago llega igual
+  // por el webhook firmado y por la sincronización al volver del checkout.
+  if (url.searchParams.has('topic')) {
+    return NextResponse.json({ ok: true })
+  }
+
+  // SECURITY: fail closed — sin secreto configurado no se procesa ningún webhook.
   if (!secret) {
     logger.error('MP webhook secret not configured — rejecting request', { path: '/api/webhooks/mercadopago' })
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 })
   }
 
-  if (!verifySignature(rawBody, signature, secret)) {
-    return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
-  }
-
-  let payload: { type: string; data?: { id?: string } }
+  let payload: { type?: string; data?: { id?: string | number } } = {}
   try {
-    payload = JSON.parse(rawBody)
+    payload = rawBody ? JSON.parse(rawBody) : {}
   } catch {
     return NextResponse.json({ error: 'Payload inválido' }, { status: 400 })
   }
 
-  if (payload.type !== 'payment') {
+  // MP firma el `data.id` de la query string; el del body es el mismo valor.
+  const dataId = url.searchParams.get('data.id') ?? String(payload.data?.id ?? '')
+
+  const validSignature = verifySignature({
+    signatureHeader: request.headers.get('x-signature') ?? '',
+    requestId:       request.headers.get('x-request-id') ?? '',
+    dataId,
+    secret,
+  })
+  if (!validSignature) {
+    return NextResponse.json({ error: 'Firma inválida' }, { status: 401 })
+  }
+
+  const type = payload.type ?? url.searchParams.get('type')
+  if (type !== 'payment' || !dataId) {
     return NextResponse.json({ ok: true })
   }
 
-  const paymentId = payload.data?.id
-  if (!paymentId) return NextResponse.json({ ok: true })
-
   try {
-    const mpResponse = await fetch(
-      `https://api.mercadopago.com/v1/payments/${paymentId}`,
-      { headers: { Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}` } }
-    )
-
-    if (!mpResponse.ok) {
-      logger.error('MP API error fetching payment', { paymentId, status: mpResponse.status })
+    const result = await syncMpPayment(dataId)
+    if (!result.ok && result.reason === 'mp_unreachable') {
+      // 502 → MP reintenta la notificación más tarde
       return NextResponse.json({ error: 'Error consultando pago' }, { status: 502 })
     }
-
-    const payment = await mpResponse.json()
-
-    const orderNumber: string = payment.external_reference
-    if (!orderNumber) return NextResponse.json({ ok: true })
-
-    const mpStatus: string = payment.status
-
-    const paymentStatus =
-      mpStatus === 'approved' ? 'APPROVED' :
-      mpStatus === 'rejected' ? 'REJECTED' : 'PENDING'
-
-    const orderStatus =
-      mpStatus === 'approved' ? 'CONFIRMED' : 'PENDING'
-
-    await prisma.order.update({
-      where: { orderNumber },
-      data: {
-        paymentStatus,
-        status:      orderStatus,
-        mpPaymentId: String(paymentId),
-      },
-    })
-
     return NextResponse.json({ ok: true })
   } catch (err) {
     logger.error('MP webhook processing error', {

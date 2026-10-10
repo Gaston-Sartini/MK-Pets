@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   # ── 1. Typecheck ───────────────────────────────────────────────────────────
@@ -121,13 +121,17 @@ jobs:
       - name: Build Next.js
         run: npm run build
         env:
-          # Dummy values so Next.js build doesn't fail on missing env vars
+          # El build pre-renderiza el catálogo: necesita leer la base real.
+          # La URL y la anon key de Supabase son públicas (las protege RLS).
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:        ${{ secrets.SUPABASE_ANON_KEY }}
+          # Valores de relleno: el build no se conecta a la base por Prisma
           DATABASE_URL:             postgresql://user:pass@localhost:5432/mkpets
           DIRECT_URL:               postgresql://user:pass@localhost:5432/mkpets
           MP_ACCESS_TOKEN:          test-token
           MP_WEBHOOK_SECRET:        test-secret-32-chars-minimum-ok!
           SESSION_SECRET:           test-session-32-chars-minimum-ok!
-          NEXT_PUBLIC_BASE_URL:     https://mk-pets.com.ar
+          NEXT_PUBLIC_BASE_URL:     https://mk-pets.netlify.app
           NEXT_PUBLIC_MP_PUBLIC_KEY: TEST_PUBLIC_KEY
 
       - name: Upload build artifact

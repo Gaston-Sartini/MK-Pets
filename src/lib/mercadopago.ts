@@ -1,13 +1,8 @@
-import MercadoPagoConfig, { Preference, Payment } from 'mercadopago'
+import MercadoPagoConfig, { Preference } from 'mercadopago'
+import { getBaseUrl } from '@/lib/shop'
 
-// Singleton del cliente MP — reutilizado entre invocaciones serverless
-const client = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN!,
-  options: { timeout: 5000 },
-})
-
-export const mpPreference = new Preference(client)
-export const mpPayment    = new Payment(client)
+/** Minutos que el cliente tiene para pagar antes de que MP rechace el pago. */
+export const MP_PAYMENT_WINDOW_MINUTES = 90
 
 export interface MpItem {
   id:         string
@@ -20,11 +15,22 @@ export interface MpItem {
 export async function createMpPreference(opts: {
   orderNumber: string
   items:       MpItem[]
-  total:       number
+  createdAt:   Date
 }) {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL!
+  // El cliente se crea por llamada: así un token faltante falla acá con un error
+  // claro y no al importar el módulo (que rompería el build).
+  const accessToken = process.env.MP_ACCESS_TOKEN
+  if (!accessToken) throw new Error('MP_ACCESS_TOKEN no configurado')
 
-  const response = await mpPreference.create({
+  const client  = new MercadoPagoConfig({ accessToken, options: { timeout: 5000 } })
+  const baseUrl = getBaseUrl()
+  const isHttps = baseUrl.startsWith('https://')
+
+  // Los pedidos MP sin pagar se cancelan solos a las 2 h (ver expire_unpaid_orders
+  // en la base). La preferencia vence antes para que nadie pague un pedido ya cancelado.
+  const expiresAt = new Date(opts.createdAt.getTime() + MP_PAYMENT_WINDOW_MINUTES * 60 * 1000)
+
+  return new Preference(client).create({
     body: {
       items: opts.items.map(i => ({
         id:          i.id,
@@ -36,15 +42,18 @@ export async function createMpPreference(opts: {
       external_reference: opts.orderNumber,
       back_urls: {
         success: `${baseUrl}/pedido/${opts.orderNumber}?mp=success`,
-        failure: `${baseUrl}/checkout?error=payment_failed&order=${opts.orderNumber}`,
+        failure: `${baseUrl}/pedido/${opts.orderNumber}?mp=failure`,
         pending: `${baseUrl}/pedido/${opts.orderNumber}?mp=pending`,
       },
-      auto_return:       'approved',
-      notification_url:  `${baseUrl}/api/webhooks/mercadopago`,
+      // MP rechaza auto_return y notification_url si no son https (caso localhost)
+      ...(isHttps && {
+        auto_return:      'approved' as const,
+        notification_url: `${baseUrl}/api/webhooks/mercadopago`,
+      }),
+      expires:              true,
+      expiration_date_to:   expiresAt.toISOString(),
       statement_descriptor: 'MK-PETS',
       metadata: { order_number: opts.orderNumber },
     },
   })
-
-  return response
 }

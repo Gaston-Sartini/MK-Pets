@@ -87,15 +87,15 @@ describe('PATCH /api/pedidos/[numero]', () => {
     id:             'order-cuid-001',
     canModifyUntil: new Date(Date.now() + 20 * 60 * 1000),
     status:         'CONFIRMED',
+    paymentStatus:  'PENDING',
     items: [
-      { id: 'clxitem0000010000000000001', unitPrice: 1500, productId: 'clxproduct0001', variantLabel: null },
-      { id: 'clxitem0000020000000000002', unitPrice: 2200, productId: 'clxproduct0002', variantLabel: '3kg' },
+      { id: 'clxitem0000010000000000001', unitPrice: 1500, productId: 'clxproduct0001', variantLabel: null,  quantity: 2 },
+      { id: 'clxitem0000020000000000002', unitPrice: 2200, productId: 'clxproduct0002', variantLabel: '3kg', quantity: 1 },
     ],
   }
 
   beforeEach(() => {
     vi.mocked(prisma.order.findUnique).mockResolvedValue(ORDER_FOR_PATCH as any)
-    vi.mocked(prisma.$transaction).mockResolvedValue([null, null, { orderNumber: 'MKP-20260514-0001', total: 2200 }] as any)
   })
 
   it('successfully updates quantities and recalculates total from DB prices', async () => {
@@ -108,6 +108,54 @@ describe('PATCH /api/pedidos/[numero]', () => {
     expect(res.status).toBe(200)
     // total must be 1×1500 = 1500 (recalculated from DB prices)
     expect(body.total).toBe(1500)
+  })
+
+  // ── Stock ───────────────────────────────────────────────────────────────
+
+  it('returns to stock exactly what was removed from the order', async () => {
+    await PATCH(
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1 }, { id: 'clxitem0000020000000000002', quantity: 0 }] }),
+      PARAMS as any
+    )
+
+    // Ítem 1: 2 → 1 devuelve 1 unidad del producto
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'clxproduct0001' },
+      data:  { stock: { increment: 1 } },
+    })
+    // Ítem 2: 1 → 0 devuelve 1 unidad de la variante y borra la línea
+    expect(prisma.productVariant.updateMany).toHaveBeenCalledWith({
+      where: { productId: 'clxproduct0002', label: '3kg' },
+      data:  { stock: { increment: 1 } },
+    })
+    expect(prisma.orderItem.delete).toHaveBeenCalledWith({ where: { id: 'clxitem0000020000000000002' } })
+  })
+
+  it('takes extra stock when a quantity goes up, and fails with 422 if there is none', async () => {
+    vi.mocked(prisma.product.updateMany).mockResolvedValueOnce({ count: 0 } as any)
+
+    const res = await PATCH(
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 5 }, { id: 'clxitem0000020000000000002', quantity: 1 }] }),
+      PARAMS as any
+    )
+
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'clxproduct0001', stock: { gte: 3 } },
+      data:  { stock: { decrement: 3 } },
+    })
+    expect(res.status).toBe(422)
+    expect(prisma.order.update).not.toHaveBeenCalled()
+  })
+
+  it('returns 409 when the order is already paid', async () => {
+    vi.mocked(prisma.order.findUnique).mockResolvedValueOnce({ ...ORDER_FOR_PATCH, paymentStatus: 'APPROVED' } as any)
+
+    const res = await PATCH(
+      patchRequest({ items: [{ id: 'clxitem0000010000000000001', quantity: 1 }] }),
+      PARAMS as any
+    )
+    expect(res.status).toBe(409)
+    expect(prisma.$transaction).not.toHaveBeenCalled()
   })
 
   // ── SECURITY: item ID ownership ─────────────────────────────────────────
@@ -128,8 +176,10 @@ describe('PATCH /api/pedidos/[numero]', () => {
       PARAMS as any
     )
 
-    // Verify $transaction was called — price validation happens in the handler
-    expect(vi.mocked(prisma.$transaction)).toHaveBeenCalled()
+    // 1 × 1500 (precio de la base), no 1 × 0.01
+    expect(prisma.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { total: 1500 } })
+    )
   })
 
   // ── Business logic ──────────────────────────────────────────────────────

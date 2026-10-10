@@ -50,7 +50,7 @@ export function HeroBanner() {
                 Ver productos
               </Link>
               <a
-                href="https://wa.me/5491166698395"
+                href="https://wa.me/5491166698395?text=Hola!%20Quer%C3%ADa%20consultarte%20lo%20siguiente..."
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2
@@ -84,6 +84,7 @@ export function HeroBanner() {
                 height={450}
                 className="w-full h-auto object-contain drop-shadow-xl"
                 priority
+                sizes="(max-width: 768px) 100vw, 50vw"
               />
             </div>
           </div>

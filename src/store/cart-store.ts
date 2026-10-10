@@ -75,7 +75,11 @@ export const useCartStore = create<CartState>()(
       totalPrice:  () => get().items.reduce((sum, i) => sum + i.unitPrice * i.quantity, 0),
     }),
     {
-      name: 'mkpets-cart',
+      name:    'mkpets-cart',
+      version: 1,
+      // When CartItem schema changes, bump version and add a migration here.
+      // Returning { items: [] } resets stale carts rather than crashing.
+      migrate: (_state, _version) => ({ items: [] }),
       partialize: (state) => ({ items: state.items }), // Solo persistir items, no UI state
     }
   )

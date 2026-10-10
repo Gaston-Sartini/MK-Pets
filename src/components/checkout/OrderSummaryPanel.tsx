@@ -40,7 +40,7 @@ export function OrderSummaryPanel({ items, total }: Props) {
             </div>
 
             <p className="font-bold text-sm text-mk-dark flex-shrink-0">
-              ${formatPrice(item.unitPrice * item.quantity)}
+              {formatPrice(item.unitPrice * item.quantity)}
             </p>
           </li>
         ))}
@@ -48,7 +48,7 @@ export function OrderSummaryPanel({ items, total }: Props) {
 
       <div className="border-t border-gray-100 pt-3 flex justify-between items-center">
         <span className="font-semibold text-mk-dark">Total</span>
-        <span className="font-bold text-xl text-mk-orange">${formatPrice(total)}</span>
+        <span className="font-bold text-xl text-mk-orange">{formatPrice(total)}</span>
       </div>
 
       <div className="mt-4 flex flex-col gap-1.5">

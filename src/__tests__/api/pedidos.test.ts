@@ -4,17 +4,21 @@ import { prisma } from '@/lib/prisma'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
+// IP distinta por request para que el rate limit no mezcle un test con otro
+let ip = 0
 function makeRequest(body: unknown) {
   return new Request('http://localhost/api/pedidos', {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `10.0.0.${++ip}` },
     body:    JSON.stringify(body),
   })
 }
 
 const VALID_PRODUCT = {
   id:        'clxproduct0001',
+  name:      'Alimento gato',
   basePrice: 1500,
+  stock:     10,
   variants:  [],
 }
 
@@ -32,7 +36,7 @@ describe('POST /api/pedidos', () => {
   beforeEach(() => {
     vi.mocked(prisma.product.findMany).mockResolvedValue([VALID_PRODUCT] as any)
     vi.mocked(prisma.order.create).mockResolvedValue({
-      orderNumber: 'MKP-20260514-0001',
+      orderNumber: 'MKP-20260514-7K2M9QHD',
       status:      'CONFIRMED',
       total:       3000,
     } as any)
@@ -45,23 +49,32 @@ describe('POST /api/pedidos', () => {
     const body = await res.json()
 
     expect(res.status).toBe(201)
-    expect(body.orderNumber).toMatch(/^MKP-\d{8}-\d{4}$/)
+    expect(body.orderNumber).toMatch(/^MKP-\d{8}-[2-9A-Z]{8}$/)
     expect(body.status).toBe('CONFIRMED')
     expect(body.total).toBe(3000)
   })
 
-  it('creates a MERCADOPAGO order with PENDING status', async () => {
+  it('creates a TRANSFER order as PENDING until the payment is confirmed', async () => {
     vi.mocked(prisma.order.create).mockResolvedValueOnce({
       orderNumber: 'MKP-20260514-0002',
       status:      'PENDING',
       total:       1500,
     } as any)
 
-    const res  = await POST(makeRequest({ ...VALID_BODY, paymentMethod: 'MERCADOPAGO', items: [{ productId: 'clxproduct0001', quantity: 1 }] }))
+    const res  = await POST(makeRequest({ ...VALID_BODY, paymentMethod: 'TRANSFER', items: [{ productId: 'clxproduct0001', quantity: 1 }] }))
     const body = await res.json()
 
     expect(res.status).toBe(201)
     expect(body.status).toBe('PENDING')
+    const created = vi.mocked(prisma.order.create).mock.calls[0][0] as any
+    expect(created.data).toMatchObject({ paymentMethod: 'TRANSFER', status: 'PENDING', paymentStatus: 'PENDING' })
+  })
+
+  it('rejects MERCADOPAGO while it is switched off for the shop', async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, paymentMethod: 'MERCADOPAGO' }))
+
+    expect(res.status).toBe(400)
+    expect(prisma.order.create).not.toHaveBeenCalled()
   })
 
   // ── SECURITY: price manipulation ────────────────────────────────────────
@@ -87,14 +100,16 @@ describe('POST /api/pedidos', () => {
     const body = await res.json()
 
     expect(res.status).toBe(422)
-    expect(body.error).toContain('no disponible')
+    expect(body.error).toContain('ya no está disponible')
   })
 
   it('uses variant price when variantLabel is provided', async () => {
     vi.mocked(prisma.product.findMany).mockResolvedValueOnce([{
       id:        'clxproduct0001',
       basePrice: 1500,
-      variants:  [{ label: '3kg', price: 2200 }],
+      name:      'Alimento gato',
+      stock:     0,
+      variants:  [{ label: '3kg', price: 2200, stock: 5 }],
     }] as any)
 
     await POST(makeRequest({
@@ -105,6 +120,38 @@ describe('POST /api/pedidos', () => {
     const createCall = vi.mocked(prisma.order.create).mock.calls[0][0]
     const item = (createCall as any).data.items.create[0]
     expect(item.unitPrice).toBe(2200)
+  })
+
+  // ── Stock ───────────────────────────────────────────────────────────────
+
+  it('decrements stock atomically inside the transaction', async () => {
+    await POST(makeRequest(VALID_BODY))
+
+    expect(prisma.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 'clxproduct0001', stock: { gte: 2 } },
+      data:  { stock: { decrement: 2 } },
+    })
+  })
+
+  it('rejects with 422 when the requested quantity exceeds stock', async () => {
+    vi.mocked(prisma.product.findMany).mockResolvedValueOnce([{ ...VALID_PRODUCT, stock: 1 }] as any)
+
+    const res  = await POST(makeRequest(VALID_BODY))
+    const body = await res.json()
+
+    expect(res.status).toBe(422)
+    expect(body.error).toContain('Stock insuficiente')
+    expect(prisma.order.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects with 422 and creates no order when another buyer takes the last unit first', async () => {
+    // La lectura previa vio stock, pero el UPDATE atómico ya no encuentra unidades
+    vi.mocked(prisma.product.updateMany).mockResolvedValueOnce({ count: 0 } as any)
+
+    const res = await POST(makeRequest(VALID_BODY))
+
+    expect(res.status).toBe(422)
+    expect(prisma.order.create).not.toHaveBeenCalled()
   })
 
   // ── Validation ──────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 export type BadgeVariant = 'new' | 'sale' | 'hot'
-export type PaymentMethod = 'MERCADOPAGO' | 'CASH_ON_DELIVERY'
+export type PaymentMethod = 'TRANSFER' | 'CASH_ON_DELIVERY' | 'MERCADOPAGO'
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'MODIFIED'
 export type PaymentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'REFUNDED'
 
@@ -7,6 +7,8 @@ export interface ProductVariant {
   id: string
   label: string
   price: number
+  /** Optional. If set, `price` is the sale price and `originalPrice` is the crossed-out "before" price. */
+  originalPrice: number | null
   stock: number
 }
 
@@ -17,6 +19,8 @@ export interface Product {
   description: string | null
   images: string[]
   basePrice: number
+  /** Optional. If set, `basePrice` is the sale price and `originalPrice` is the crossed-out "before" price. */
+  originalPrice: number | null
   stock: number
   badge: BadgeVariant | null
   isFeatured: boolean
