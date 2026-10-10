@@ -127,43 +127,79 @@ export function isWhatsAppConfigured(): boolean {
  * apenas se devuelve la respuesta y un fetch "suelto" se pierde. El timeout
  * acota cuánto puede demorar la respuesta si el servicio está caído.
  */
-export async function sendWhatsApp(rawPhone: string, text: string, context: Record<string, unknown> = {}): Promise<boolean> {
+export async function sendWhatsApp(
+  rawPhone: string,
+  text: string,
+  context: Record<string, unknown> = {},
+  opts: { imageUrl?: string | null } = {},
+): Promise<boolean> {
   if (!isWhatsAppConfigured()) return false
 
   const number = normalizeArgPhone(rawPhone)
   const direct = Boolean(process.env.EVOLUTION_API_URL)
+  const via    = direct ? 'evolution' : 'n8n'
 
   try {
-    const res = direct
-      ? await fetch(
-          `${process.env.EVOLUTION_API_URL!.replace(/\/+$/, '')}/message/sendText/${encodeURIComponent(process.env.EVOLUTION_INSTANCE ?? 'mi-bot')}`,
-          {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', apikey: process.env.EVOLUTION_API_KEY ?? '' },
-            body:    JSON.stringify({ number, text }),
-            signal:  AbortSignal.timeout(6000),
-          },
-        )
-      : await fetch(process.env.N8N_ORDER_WEBHOOK_URL!, {
-          method:  'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // n8n valida este header para que nadie más pueda disparar mensajes
-            ...(process.env.N8N_WEBHOOK_SECRET && { 'x-mkpets-secret': process.env.N8N_WEBHOOK_SECRET }),
-          },
-          body:   JSON.stringify({ phone: number, message: text }),
-          signal: AbortSignal.timeout(4000),
-        })
-
-    if (!res.ok) {
-      logger.error('WhatsApp rejected', { ...context, via: direct ? 'evolution' : 'n8n', status: res.status })
-      return false
+    if (!direct) {
+      const res = await fetch(process.env.N8N_ORDER_WEBHOOK_URL!, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // n8n valida este header para que nadie más pueda disparar mensajes
+          ...(process.env.N8N_WEBHOOK_SECRET && { 'x-mkpets-secret': process.env.N8N_WEBHOOK_SECRET }),
+        },
+        body:   JSON.stringify({ phone: number, message: text, image: opts.imageUrl ?? null }),
+        signal: AbortSignal.timeout(4000),
+      })
+      if (!res.ok) logger.error('WhatsApp rejected', { ...context, via, status: res.status })
+      return res.ok
     }
-    return true
+
+    const evolution = (path: string, body: Record<string, unknown>, timeoutMs: number) => fetch(
+      `${process.env.EVOLUTION_API_URL!.replace(/\/+$/, '')}/message/${path}/${encodeURIComponent(process.env.EVOLUTION_INSTANCE ?? 'mi-bot')}`,
+      {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', apikey: process.env.EVOLUTION_API_KEY ?? '' },
+        body:    JSON.stringify(body),
+        signal:  AbortSignal.timeout(timeoutMs),
+      },
+    )
+
+    // Con imagen, el texto viaja como epígrafe. Si la imagen falla (URL caída,
+    // Evolution no la puede bajar), se manda igual el texto solo: lo importante
+    // es que el cliente reciba el detalle del pedido.
+    if (opts.imageUrl) {
+      const withImage = await evolution('sendMedia', {
+        number,
+        mediatype: 'image',
+        mimetype:  'image/png',
+        media:     opts.imageUrl,
+        fileName:  'mk-pets-pedido.png',
+        caption:   text,
+      }, 9000).catch(() => null)
+      if (withImage?.ok) return true
+      logger.warn('WhatsApp image failed — falling back to text', { ...context, status: withImage?.status ?? 'network' })
+    }
+
+    const res = await evolution('sendText', { number, text }, 6000)
+    if (!res.ok) logger.error('WhatsApp rejected', { ...context, via, status: res.status })
+    return res.ok
   } catch (err) {
-    logger.error('WhatsApp failed', { ...context, via: direct ? 'evolution' : 'n8n', error: String(err) })
+    logger.error('WhatsApp failed', { ...context, via, error: String(err) })
     return false
   }
+}
+
+/**
+ * Imagen "Resumen de pedido" que encabeza el WhatsApp de un pedido nuevo.
+ * Evolution la descarga por URL, así que tiene que ser pública: en producción es
+ * la del propio sitio; en local (donde el sitio es localhost y Evolution no lo
+ * alcanza desde Docker) se configura WHATSAPP_ORDER_IMAGE_URL.
+ */
+export function orderImageUrl(): string | null {
+  if (process.env.WHATSAPP_ORDER_IMAGE_URL) return process.env.WHATSAPP_ORDER_IMAGE_URL
+  const base = getBaseUrl()
+  return base.startsWith('https://') ? `${base}/logo_resumen_compra.png` : null
 }
 
 /**
@@ -179,7 +215,7 @@ export async function notifyOrderWhatsApp(payload: OrderNotificationPayload): Pr
   const notifyOwner = owner && !(payload.paymentMethod === 'MERCADOPAGO' && payload.isPendingPayment === false)
 
   const [customerOk] = await Promise.all([
-    sendWhatsApp(payload.phone, buildOrderMessage(payload), { ...context, to: 'customer' }),
+    sendWhatsApp(payload.phone, buildOrderMessage(payload), { ...context, to: 'customer' }, { imageUrl: orderImageUrl() }),
     notifyOwner ? sendWhatsApp(owner, buildOwnerMessage(payload), { ...context, to: 'owner' }) : Promise.resolve(false),
   ])
   return customerOk
