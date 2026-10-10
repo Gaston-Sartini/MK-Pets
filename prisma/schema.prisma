@@ -124,6 +124,7 @@ enum OrderStatus {
 
 enum PaymentMethod {
   MERCADOPAGO
+  TRANSFER
   CASH_ON_DELIVERY
 }
 

@@ -1,35 +1,67 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-auth'
 import { prisma } from '@/lib/prisma'
-import { orderStatusSchema } from '@/lib/validations/admin'
+import { orderUpdateSchema } from '@/lib/validations/admin'
 import { restoreStock } from '@/lib/stock'
+import { buildStatusMessage, sendWhatsApp, type CustomerUpdate } from '@/lib/whatsapp'
 import { logger } from '@/lib/logger'
 
+type Outcome =
+  | { kind: 'ok'; notify: CustomerUpdate | null; customerName: string; phone: string }
+  | { kind: 'notFound' | 'cancelledIsFinal' | 'conflict' }
+
+// Estados que el cliente quiere enterarse por WhatsApp
+const NOTIFY_ON_STATUS: Partial<Record<string, CustomerUpdate>> = {
+  PREPARING: 'PREPARING',
+  SHIPPED:   'SHIPPED',
+  DELIVERED: 'DELIVERED',
+  CANCELLED: 'CANCELLED',
+}
+
+/**
+ * Cambia el estado del pedido (`status`) o marca el pago como recibido / pendiente
+ * (`paymentStatus`). Marcar el pago como recibido confirma un pedido pendiente.
+ */
 export async function PUT(req: Request, { params }: { params: { numero: string } }) {
   const auth = await requireAdmin()
   if (auth.error) return auth.error
 
-  const parsed = orderStatusSchema.safeParse(await req.json().catch(() => null))
+  const parsed = orderUpdateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Estado inválido' }, { status: 400 })
+    return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 })
   }
-  const { status } = parsed.data
+  const { status, paymentStatus } = parsed.data
 
+  let outcome: Outcome
   try {
-    const result = await prisma.$transaction(async (tx) => {
+    outcome = await prisma.$transaction(async (tx): Promise<Outcome> => {
       const order = await tx.order.findUnique({
         where:  { orderNumber: params.numero },
         select: {
-          id:     true,
-          status: true,
-          items:  { select: { productId: true, variantLabel: true, quantity: true } },
+          id: true, status: true, paymentStatus: true, customerName: true, phone: true,
+          items: { select: { productId: true, variantLabel: true, quantity: true } },
         },
       })
-      if (!order) return { notFound: true as const }
-      if (order.status === status) return { ok: true as const }
+      if (!order) return { kind: 'notFound' }
+
+      const done = (notify: CustomerUpdate | null): Outcome =>
+        ({ kind: 'ok', notify, customerName: order.customerName, phone: order.phone })
 
       // Un pedido cancelado ya devolvió su stock: reabrirlo lo vendería dos veces.
-      if (order.status === 'CANCELLED') return { cancelledIsFinal: true as const }
+      if (order.status === 'CANCELLED') return { kind: 'cancelledIsFinal' }
+
+      if (paymentStatus) {
+        if (order.paymentStatus === paymentStatus) return done(null)
+        const confirms = paymentStatus === 'APPROVED' && order.status === 'PENDING'
+        const updated  = await tx.order.updateMany({
+          where: { id: order.id, paymentStatus: order.paymentStatus },
+          data:  { paymentStatus, ...(confirms && { status: 'CONFIRMED' as const }) },
+        })
+        if (updated.count === 0) return { kind: 'conflict' }
+        return done(paymentStatus === 'APPROVED' ? 'PAYMENT_RECEIVED' : null)
+      }
+
+      if (!status || order.status === status) return done(null)
 
       // El guard en el WHERE evita devolver stock dos veces si llegan dos
       // cancelaciones simultáneas (doble click, dos pestañas).
@@ -37,27 +69,34 @@ export async function PUT(req: Request, { params }: { params: { numero: string }
         where: { id: order.id, status: order.status },
         data:  { status },
       })
-      if (updated.count === 0) return { conflict: true as const }
+      if (updated.count === 0) return { kind: 'conflict' }
 
       if (status === 'CANCELLED') await restoreStock(tx, order.items)
-      return { ok: true as const }
+      return done(NOTIFY_ON_STATUS[status] ?? null)
     })
-
-    if ('notFound' in result) {
-      return NextResponse.json({ error: 'Pedido no encontrado' }, { status: 404 })
-    }
-    if ('cancelledIsFinal' in result) {
-      return NextResponse.json(
-        { error: 'El pedido está cancelado y su stock ya fue devuelto. Si el cliente lo quiere igual, que haga un pedido nuevo.' },
-        { status: 409 },
-      )
-    }
-    if ('conflict' in result) {
-      return NextResponse.json({ error: 'El pedido cambió mientras lo editabas. Recargá la página.' }, { status: 409 })
-    }
-    return NextResponse.json({ ok: true })
   } catch (err) {
-    logger.error('Error updating order status', { error: err instanceof Error ? err.message : String(err) })
+    logger.error('Error updating order', { error: err instanceof Error ? err.message : String(err) })
     return NextResponse.json({ error: 'No se pudo actualizar el pedido' }, { status: 500 })
   }
+
+  if (outcome.kind !== 'ok') {
+    const failure = {
+      notFound:         { status: 404, error: 'Pedido no encontrado' },
+      cancelledIsFinal: { status: 409, error: 'El pedido está cancelado y su stock ya fue devuelto. Si el cliente lo quiere igual, que haga un pedido nuevo.' },
+      conflict:         { status: 409, error: 'El pedido cambió mientras lo editabas. Recargá la página.' },
+    }[outcome.kind]
+    return NextResponse.json({ error: failure.error }, { status: failure.status })
+  }
+
+  // Fuera de la transacción: un WhatsApp caído no debe revertir el cambio.
+  let notified = false
+  if (outcome.notify) {
+    notified = await sendWhatsApp(
+      outcome.phone,
+      buildStatusMessage(outcome.notify, { orderNumber: params.numero, customerName: outcome.customerName }),
+      { orderNumber: params.numero, update: outcome.notify },
+    )
+  }
+
+  return NextResponse.json({ ok: true, notified })
 }

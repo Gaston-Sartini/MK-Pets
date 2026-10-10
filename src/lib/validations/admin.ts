@@ -50,6 +50,23 @@ export const categorySchema = z.object({
 export const ORDER_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const
 export const orderStatusSchema = z.object({ status: z.enum(ORDER_STATUSES) })
 
+/** El admin cambia una cosa por vez: el estado del pedido o el estado del pago. */
+export const orderUpdateSchema = z.object({
+  status:        z.enum(ORDER_STATUSES).optional(),
+  paymentStatus: z.enum(['PENDING', 'APPROVED']).optional(),
+}).refine(v => Boolean(v.status) !== Boolean(v.paymentStatus), {
+  message: 'Enviar status o paymentStatus (uno solo)',
+})
+
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1, 'Ingresá tu contraseña actual'),
+  newPassword:     z.string()
+    .min(10, 'La contraseña nueva debe tener al menos 10 caracteres')
+    .max(72, 'La contraseña nueva es demasiado larga'),
+}).refine(v => v.newPassword !== v.currentPassword, {
+  message: 'La contraseña nueva tiene que ser distinta de la actual',
+})
+
 /** Primer mensaje de error legible de un ZodError. */
 export function firstIssue(error: z.ZodError): string {
   const issue = error.issues[0]

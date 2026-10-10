@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeArgPhone, buildOrderMessage } from '@/lib/whatsapp'
+import { normalizeArgPhone, buildOrderMessage, buildOwnerMessage, buildStatusMessage } from '@/lib/whatsapp'
 import { buildResponse, parseModelJson, sanitizeHistory, retryDelayMs } from '@/lib/chat/engine'
 import { generateOrderNumber, parseDbDate, canModifyOrder } from '@/lib/utils'
 import { isAdminUser } from '@/lib/admin-auth'
@@ -132,11 +132,41 @@ describe('buildOrderMessage', () => {
     expect(msg).toContain('Recibimos tu pago')
   })
 
-  it('includes the transfer alias only when configured', () => {
-    expect(buildOrderMessage({ ...order, paymentMethod: 'CASH_ON_DELIVERY' })).not.toContain('alias')
+  it('tells a TRANSFER customer the amount and the alias, when one is configured', () => {
+    expect(buildOrderMessage({ ...order, paymentMethod: 'TRANSFER' })).not.toContain('alias')
     process.env.TRANSFER_ALIAS = 'mi.alias.mp'
-    expect(buildOrderMessage({ ...order, paymentMethod: 'CASH_ON_DELIVERY' })).toContain('alias *mi.alias.mp*')
+    const msg = buildOrderMessage({ ...order, paymentMethod: 'TRANSFER' })
+    expect(msg).toContain('transferí *$12.900* al alias *mi.alias.mp*')
     delete process.env.TRANSFER_ALIAS
+  })
+
+  it('does not mention transfers to a customer paying cash on delivery', () => {
+    process.env.TRANSFER_ALIAS = 'mi.alias.mp'
+    const msg = buildOrderMessage({ ...order, paymentMethod: 'CASH_ON_DELIVERY' })
+    expect(msg).toContain('efectivo')
+    expect(msg).not.toContain('alias')
+    delete process.env.TRANSFER_ALIAS
+  })
+
+  it('gives the shop owner who, where, how much and how they pay', () => {
+    const msg = buildOwnerMessage({ ...order, address: 'Av. Santa Fe 2000', paymentMethod: 'TRANSFER', notes: 'Timbre roto' })
+    expect(msg).toContain('Nuevo pedido MKP-20260514-7K2M9QHD')
+    expect(msg).toContain('Ana García — wa.me/5491166698395')
+    expect(msg).toContain('Av. Santa Fe 2000')
+    expect(msg).toContain('$12.900 · Transferencia')
+    expect(msg).toContain('Timbre roto')
+    expect(msg).toContain('/admin/pedidos')
+  })
+
+  it('writes a different customer update for each order change', () => {
+    const o = { orderNumber: 'MKP-1', customerName: 'Ana García' }
+    expect(buildStatusMessage('PAYMENT_RECEIVED', o)).toContain('Recibimos el pago')
+    expect(buildStatusMessage('SHIPPED', o)).toContain('en camino')
+    expect(buildStatusMessage('CANCELLED', o)).toContain('cancelado')
+    for (const update of ['PAYMENT_RECEIVED', 'PREPARING', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const) {
+      expect(buildStatusMessage(update, o)).toContain('MKP-1')
+      expect(buildStatusMessage(update, o)).toContain('Ana')
+    }
   })
 })
 

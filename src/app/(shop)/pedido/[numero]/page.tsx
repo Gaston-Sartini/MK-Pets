@@ -6,6 +6,7 @@ import { getOrderByNumber } from '@/lib/queries'
 import { canModifyOrder, formatPrice } from '@/lib/utils'
 import { OrderNumberDisplay } from '@/components/checkout/OrderNumberDisplay'
 import { PayWithMpButton } from '@/components/checkout/PayWithMpButton'
+import { CopyText } from '@/components/checkout/CopyText'
 import { syncMpPayment } from '@/lib/mp-payments'
 import { SHOP_TIMEZONE, whatsappLink } from '@/lib/shop'
 
@@ -50,6 +51,9 @@ export default async function OrderPage({ params, searchParams }: Props) {
   const isPaid     = order.paymentStatus === 'APPROVED'
   const isOpen     = !['CANCELLED', 'DELIVERED'].includes(order.status)
   const awaitingMp = isMp && !isPaid && isOpen
+  const awaitingTransfer = order.paymentMethod === 'TRANSFER' && !isPaid && isOpen
+  const transferAlias    = process.env.TRANSFER_ALIAS
+  const transferHolder   = process.env.TRANSFER_HOLDER
   // El banner sale del estado real del pago, no del parámetro de la URL
   // (que cualquiera puede escribir a mano).
   const mpState    = !searchParams.mp ? null
@@ -58,7 +62,7 @@ export default async function OrderPage({ params, searchParams }: Props) {
     : 'error'
   const canModify  = canModifyOrder(order.canModifyUntil) && !isPaid
     && ['PENDING', 'CONFIRMED'].includes(order.status)
-  const statusInfo = awaitingMp
+  const statusInfo = awaitingMp || awaitingTransfer
     ? { label: 'Esperando el pago', color: 'text-yellow-700 bg-yellow-50 border-yellow-200', icon: '⏳' }
     : STATUS_LABEL[order.status] ?? STATUS_LABEL.PENDING
 
@@ -94,13 +98,44 @@ export default async function OrderPage({ params, searchParams }: Props) {
           <div>
             <p className="font-bold">{statusInfo.label}</p>
             {order.paymentMethod === 'CASH_ON_DELIVERY' && isOpen && (
-              <p className="text-xs opacity-80">Pagás en efectivo o por transferencia al recibir tu pedido</p>
+              <p className="text-xs opacity-80">Pagás en efectivo cuando te entregamos el pedido</p>
             )}
             {awaitingMp && (
               <p className="text-xs opacity-80">Reservamos tus productos por 90 minutos</p>
             )}
+            {awaitingTransfer && (
+              <p className="text-xs opacity-80">Lo confirmamos apenas recibimos tu transferencia</p>
+            )}
+            {order.paymentMethod === 'TRANSFER' && isPaid && isOpen && (
+              <p className="text-xs opacity-80">Recibimos tu transferencia ✓</p>
+            )}
           </div>
         </div>
+
+        {/* Datos para transferir */}
+        {awaitingTransfer && (
+          <div className="mt-4 bg-white rounded-card shadow-card p-5 border-2 border-mk-orange/40">
+            <h2 className="font-bold text-mk-dark mb-3">🏦 Cómo pagar</h2>
+            <ol className="space-y-3 text-sm text-mk-dark list-decimal list-inside">
+              <li>
+                Transferí <strong className="text-mk-orange">{formatPrice(order.total)}</strong>
+                {transferAlias
+                  ? <> al alias <CopyText value={transferAlias} label="alias" />{transferHolder && <span className="text-mk-mid"> (a nombre de {transferHolder})</span>}</>
+                  : <>. Escribinos por WhatsApp y te pasamos los datos.</>}
+              </li>
+              <li>Mandanos el comprobante por WhatsApp con el botón de abajo.</li>
+              <li>Cuando lo vemos, confirmamos tu pedido y coordinamos la entrega.</li>
+            </ol>
+            <a
+              href={whatsappLink(`Hola! Te mando el comprobante de la transferencia del pedido ${order.orderNumber} (${formatPrice(order.total)}).`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary w-full mt-4 text-center block"
+            >
+              💬 Enviar comprobante por WhatsApp
+            </a>
+          </div>
+        )}
 
         {/* Customer info */}
         <div className="mt-4 bg-white rounded-card shadow-card p-5">

@@ -6,9 +6,10 @@ import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { notifyOrderWhatsApp } from '@/lib/whatsapp'
 import { logger } from '@/lib/logger'
 import { takeStock } from '@/lib/stock'
+import { enabledPaymentMethods } from '@/lib/shop'
 
 const createOrderSchema = z.object({
-  paymentMethod: z.enum(['MERCADOPAGO', 'CASH_ON_DELIVERY']),
+  paymentMethod: z.enum(['TRANSFER', 'CASH_ON_DELIVERY', 'MERCADOPAGO']),
   customerName:  z.string().min(3).max(100),
   address:       z.string().min(10).max(200),
   phone:         z.string().min(8).max(20),
@@ -53,6 +54,11 @@ export async function POST(request: Request) {
     }
 
     const { paymentMethod, customerName, address, phone, notes, items } = parsed.data
+
+    // El checkout solo ofrece los medios habilitados; esto frena un request armado a mano.
+    if (!enabledPaymentMethods().includes(paymentMethod)) {
+      return NextResponse.json({ error: 'Ese medio de pago no está disponible.' }, { status: 400 })
+    }
 
     // SECURITY: look up actual prices from DB — never trust client-supplied prices
     const productIds = [...new Set(items.map(i => i.productId))]
@@ -143,6 +149,8 @@ export async function POST(request: Request) {
           notes,
           total,
           canModifyUntil,
+          // Efectivo queda confirmado al instante. Transferencia y MP quedan
+          // pendientes hasta que entra la plata (el admin marca "pago recibido").
           status:        paymentMethod === 'CASH_ON_DELIVERY' ? 'CONFIRMED' : 'PENDING',
           paymentStatus: 'PENDING',
           items: {
@@ -158,12 +166,13 @@ export async function POST(request: Request) {
       })
     })
 
-    // Notify for all orders immediately — MP orders use isPendingPayment: true
-    // so n8n can send a "waiting for payment" message instead of a confirmation.
+    // Aviso al cliente (y al dueño si está OWNER_WHATSAPP). El texto depende del
+    // medio de pago: ver buildOrderMessage.
     await notifyOrderWhatsApp({
       orderNumber,
       customerName,
       phone,
+      address,
       total,
       notes,
       paymentMethod,

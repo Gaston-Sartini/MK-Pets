@@ -116,6 +116,12 @@ export async function Footer() {
                         flex flex-col sm:flex-row items-center justify-between
                         gap-3 text-xs font-body text-white/40">
           <span>© {new Date().getFullYear()} MK-Pets. Todos los derechos reservados.</span>
+          <Link
+            href="/arrepentimiento"
+            className="text-white/80 underline underline-offset-2 hover:text-mk-orange transition-colors"
+          >
+            Botón de arrepentimiento
+          </Link>
           <span className="flex items-center gap-3">
             <span>Hecho con 🐾 en Buenos Aires, Argentina</span>
             <Link

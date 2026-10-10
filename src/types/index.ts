@@ -1,5 +1,5 @@
 export type BadgeVariant = 'new' | 'sale' | 'hot'
-export type PaymentMethod = 'MERCADOPAGO' | 'CASH_ON_DELIVERY'
+export type PaymentMethod = 'TRANSFER' | 'CASH_ON_DELIVERY' | 'MERCADOPAGO'
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'MODIFIED'
 export type PaymentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'REFUNDED'
 

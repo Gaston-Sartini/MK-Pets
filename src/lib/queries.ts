@@ -139,15 +139,23 @@ export async function getProducts(opts: {
   return { products: page.map(serializeProduct), nextCursor }
 }
 
-/** Todas las categorías ordenadas para la barra de navegación */
+/**
+ * Categorías para la navegación de la tienda, en orden. Solo las que tienen al
+ * menos un producto activo: una categoría vacía lleva al cliente a una página
+ * sin nada para comprar. (El panel admin las lista todas por su propia ruta.)
+ */
 export async function getCategories() {
   const { data, error } = await supabase
     .from('Category')
-    .select('id, name, slug, emoji, order')
+    .select('id, name, slug, emoji, order, products:Product ( count )')
+    .eq('products.isActive', true)
     .order('order', { ascending: true })
 
   if (error) throw new Error(error.message)
-  return data ?? []
+  return ((data ?? []) as any[])
+    .filter(c => (c.products?.[0]?.count ?? 0) > 0)
+    .map(({ products: _products, ...category }) => category) as
+      { id: string; name: string; slug: string; emoji: string | null; order: number }[]
 }
 
 /** Una categoría por slug — para metadata de página */

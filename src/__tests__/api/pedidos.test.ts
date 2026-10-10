@@ -54,18 +54,27 @@ describe('POST /api/pedidos', () => {
     expect(body.total).toBe(3000)
   })
 
-  it('creates a MERCADOPAGO order with PENDING status', async () => {
+  it('creates a TRANSFER order as PENDING until the payment is confirmed', async () => {
     vi.mocked(prisma.order.create).mockResolvedValueOnce({
       orderNumber: 'MKP-20260514-0002',
       status:      'PENDING',
       total:       1500,
     } as any)
 
-    const res  = await POST(makeRequest({ ...VALID_BODY, paymentMethod: 'MERCADOPAGO', items: [{ productId: 'clxproduct0001', quantity: 1 }] }))
+    const res  = await POST(makeRequest({ ...VALID_BODY, paymentMethod: 'TRANSFER', items: [{ productId: 'clxproduct0001', quantity: 1 }] }))
     const body = await res.json()
 
     expect(res.status).toBe(201)
     expect(body.status).toBe('PENDING')
+    const created = vi.mocked(prisma.order.create).mock.calls[0][0] as any
+    expect(created.data).toMatchObject({ paymentMethod: 'TRANSFER', status: 'PENDING', paymentStatus: 'PENDING' })
+  })
+
+  it('rejects MERCADOPAGO while it is switched off for the shop', async () => {
+    const res = await POST(makeRequest({ ...VALID_BODY, paymentMethod: 'MERCADOPAGO' }))
+
+    expect(res.status).toBe(400)
+    expect(prisma.order.create).not.toHaveBeenCalled()
   })
 
   // ── SECURITY: price manipulation ────────────────────────────────────────

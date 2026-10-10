@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { formatPrice, parseDbDate } from '@/lib/utils'
-import { SHOP_TIMEZONE } from '@/lib/shop'
+import { PAYMENT_METHOD_LABEL, SHOP_TIMEZONE } from '@/lib/shop'
 
 const STATUSES = ['PENDING','CONFIRMED','PREPARING','SHIPPED','DELIVERED','CANCELLED'] as const
 const STATUS_LABEL: Record<string, string> = {
@@ -29,10 +29,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   REJECTED: 'Rechazado',
   REFUNDED: 'Reembolsado',
 }
-const METHOD_LABEL: Record<string, string> = {
-  MERCADOPAGO:      'MercadoPago',
-  CASH_ON_DELIVERY: 'Efectivo / transferencia',
-}
+const METHOD_LABEL: Record<string, string> = PAYMENT_METHOD_LABEL
 
 interface AdminOrder {
   id: string
@@ -58,6 +55,7 @@ export default function AdminPedidosPage() {
   const [filter, setFilter]     = useState<Filter>('active')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [saving, setSaving]     = useState<string | null>(null)
+  const [notice, setNotice]     = useState('')
 
   const loadOrders = useCallback(async () => {
     try {
@@ -81,21 +79,32 @@ export default function AdminPedidosPage() {
       `¿Cancelar el pedido ${order.orderNumber}? Se devuelve el stock y no se puede deshacer.`
     )) return
 
+    await save(order, { status })
+  }
+
+  const updatePayment = async (order: AdminOrder, paymentStatus: 'APPROVED' | 'PENDING') => {
+    if (paymentStatus === 'PENDING' && !confirm(`¿Marcar el pago del pedido ${order.orderNumber} como NO recibido?`)) return
+    await save(order, { paymentStatus })
+  }
+
+  const save = async (order: AdminOrder, change: { status?: string; paymentStatus?: string }) => {
     setSaving(order.orderNumber)
+    setNotice('')
     try {
-      const res = await fetch(`/api/admin/pedidos/${order.orderNumber}`, {
+      const res  = await fetch(`/api/admin/pedidos/${order.orderNumber}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ status }),
+        body:    JSON.stringify(change),
       })
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.error ?? 'No se pudo cambiar el estado')
+        setError(data.error ?? 'No se pudo guardar el cambio')
       } else {
         setError('')
+        if (data.notified) setNotice(`Le avisamos a ${order.customerName} por WhatsApp.`)
       }
     } catch {
-      setError('Error de conexión al cambiar el estado')
+      setError('Error de conexión al guardar el cambio')
     } finally {
       setSaving(null)
       loadOrders()
@@ -127,6 +136,10 @@ export default function AdminPedidosPage() {
 
       {error && (
         <div role="alert" className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
+      )}
+
+      {notice && (
+        <div role="status" className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg text-sm">{notice}</div>
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -205,6 +218,17 @@ export default function AdminPedidosPage() {
                         {PAYMENT_LABEL[o.paymentStatus] ?? o.paymentStatus}
                       </span>
                       <p className="text-xs text-mk-mid mt-1">{METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod}</p>
+                      {/* El pago de MercadoPago lo confirma MP solo; efectivo y transferencia, a mano. */}
+                      {o.paymentMethod !== 'MERCADOPAGO' && o.status !== 'CANCELLED' && (
+                        <button
+                          type="button"
+                          disabled={saving === o.orderNumber}
+                          onClick={() => updatePayment(o, o.paymentStatus === 'APPROVED' ? 'PENDING' : 'APPROVED')}
+                          className="mt-1 text-xs font-semibold text-mk-orange hover:underline disabled:opacity-50"
+                        >
+                          {o.paymentStatus === 'APPROVED' ? 'Deshacer' : 'Marcar pago recibido'}
+                        </button>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <select

@@ -12,8 +12,7 @@ import { PaymentSelector }    from '@/components/checkout/PaymentSelector'
 import { DeliveryForm }       from '@/components/checkout/DeliveryForm'
 import { OrderSummaryPanel }  from '@/components/checkout/OrderSummaryPanel'
 import type { DeliveryFormData } from '@/lib/validations/checkout'
-
-type PaymentMethod = 'MERCADOPAGO' | 'CASH_ON_DELIVERY'
+import type { PaymentMethod } from '@/lib/shop'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -148,6 +147,12 @@ export default function CheckoutPage() {
                 {paymentMethod === 'MERCADOPAGO' && (
                   <div className="mb-5 flex items-center gap-2 bg-blue-50 text-blue-700 rounded-chip px-4 py-2 text-sm font-medium">
                     <span>💳</span> Pagás con MercadoPago después de confirmar
+                  </div>
+                )}
+
+                {paymentMethod === 'TRANSFER' && (
+                  <div className="mb-5 flex items-center gap-2 bg-mk-green-pale text-mk-green rounded-chip px-4 py-2 text-sm font-medium">
+                    <span>🏦</span> Al confirmar te mostramos el alias para transferir
                   </div>
                 )}
 
