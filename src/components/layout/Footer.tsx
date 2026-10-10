@@ -116,12 +116,20 @@ export async function Footer() {
                         flex flex-col sm:flex-row items-center justify-between
                         gap-3 text-xs font-body text-white/40">
           <span>© {new Date().getFullYear()} MK-Pets. Todos los derechos reservados.</span>
-          <Link
-            href="/arrepentimiento"
-            className="text-white/80 underline underline-offset-2 hover:text-mk-orange transition-colors"
-          >
-            Botón de arrepentimiento
-          </Link>
+          <nav aria-label="Legales" className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <Link
+              href="/arrepentimiento"
+              className="text-white/80 underline underline-offset-2 hover:text-mk-orange transition-colors"
+            >
+              Botón de arrepentimiento
+            </Link>
+            <Link href="/terminos" className="text-white/60 hover:text-mk-orange transition-colors">
+              Términos y condiciones
+            </Link>
+            <Link href="/privacidad" className="text-white/60 hover:text-mk-orange transition-colors">
+              Privacidad
+            </Link>
+          </nav>
           <span className="flex items-center gap-3">
             <span>Hecho con 🐾 en Buenos Aires, Argentina</span>
             <Link
