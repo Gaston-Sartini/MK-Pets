@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false    # never cancel an in-flight deploy
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   # ── Gate: all CI checks must pass ─────────────────────────────────────────
@@ -26,7 +26,7 @@ jobs:
     needs: ci-gate
     environment:
       name: production
-      url: https://mk-pets.com.ar
+      url: https://mk-pets.netlify.app
 
     steps:
       - uses: actions/checkout@v4
@@ -38,35 +38,18 @@ jobs:
 
       - run: npm ci
 
-      - name: Install Netlify CLI
-        run: npm install -g netlify-cli
-
+      # Las variables de la app (base de datos, Supabase, IA, WhatsApp…) viven en
+      # Netlify → Site configuration → Environment variables. `netlify deploy --build`
+      # las baja solo para el build y son las que usa el sitio en ejecución.
+      # No se duplican como secrets de GitHub: tenerlas en dos lugares es la forma
+      # más fácil de desplegar con un valor viejo.
       - name: Build & Deploy to Netlify
-        run: netlify deploy --build --prod --site=${{ secrets.NETLIFY_SITE_ID }}
+        run: npx netlify-cli@26 deploy --build --prod --site=${{ secrets.NETLIFY_SITE_ID }}
         env:
-          NETLIFY_AUTH_TOKEN:        ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID:           ${{ secrets.NETLIFY_SITE_ID }}
-          DATABASE_URL:              ${{ secrets.DATABASE_URL }}
-          DIRECT_URL:                ${{ secrets.DIRECT_URL }}
-          MP_ACCESS_TOKEN:           ${{ secrets.MP_ACCESS_TOKEN }}
-          MP_WEBHOOK_SECRET:         ${{ secrets.MP_WEBHOOK_SECRET }}
-          SESSION_SECRET:            ${{ secrets.SESSION_SECRET }}
-          NEXT_PUBLIC_BASE_URL:      ${{ vars.NEXT_PUBLIC_BASE_URL }}
-          NEXT_PUBLIC_MP_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_MP_PUBLIC_KEY }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID:    ${{ secrets.NETLIFY_SITE_ID }}
 
-      - name: Run DB migrations (production)
-        run: npx prisma migrate deploy
-        continue-on-error: true   # Supabase direct URL requires IPv6; GitHub Actions is IPv4-only
-        env:
-          DATABASE_URL: ${{ secrets.DIRECT_URL }}
-          DIRECT_URL:   ${{ secrets.DIRECT_URL }}
-
-      - name: Notify deploy success
-        if: success()
+      - name: Smoke test
         run: |
-          echo "✅ Deploy to production completed at $(date -u)"
-          echo "🌐 URL: https://mk-pets.com.ar"
-
-      - name: Notify deploy failure
-        if: failure()
-        run: echo "❌ Deploy FAILED — check logs above"
+          sleep 15
+          curl -fsS https://mk-pets.netlify.app/api/health
