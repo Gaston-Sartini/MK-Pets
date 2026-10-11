@@ -1,33 +1,34 @@
 # WhatsApp gratis en Google Cloud (máquina `e2-micro`)
 
-Alternativa sin costo al VPS pago de [README.md](README.md). Usa la máquina
-gratuita permanente de Google Cloud, que tiene solo 1 GB de RAM; por eso corre
-una versión liviana de Evolution (`docker-compose.gcp.yml`):
+Alternativa sin costo al VPS pago de [README.md](README.md). **Es lo que está
+en producción desde el 2026-10-11.**
 
-- **Sin base propia:** guarda sus datos en tu Supabase, en un schema aparte
+Usa la máquina gratuita permanente de Google Cloud, que tiene solo 1 GB de RAM;
+por eso corre una versión liviana de Evolution (`docker-compose.gcp.yml`):
+
+- **Sin base propia:** guarda sus datos en Supabase, en un schema aparte
   (`evolution`) con un usuario propio (`evolution_app`) que no puede leer los
   pedidos ni nada de la tienda.
 - **Sin Redis.**
 
-Probado en local (2026-10-10) con el mismo límite de memoria:
+## Qué hay desplegado
 
-- Vincula el teléfono y envía avisos con imagen.
-- Usa ~250 MB con la sesión activa (el tope configurado es 750 MB).
-- La sesión vuelve sola tras un reinicio, **y también en una máquina nueva con
-  el disco vacío**: alcanza con que apunte al mismo Supabase.
+| | |
+|---|---|
+| Proyecto de Google Cloud | `mkpets-wa` |
+| Máquina | `mkpets-wa`, `e2-micro`, zona `us-central1-a`, disco `pd-standard` de 30 GB |
+| IP (fija) | `35.254.138.207` |
+| Dirección de Evolution | `https://35-254-138-207.sslip.io` |
+| Instancia de WhatsApp | `mi-bot` |
+| Alerta de gasto | presupuesto de USD 1 en la cuenta de facturación |
+| Credenciales | `infra/evolution/.env` en la PC (no se sube a git) y `/opt/mkpets-wa/.env` en la máquina |
 
-**No está probado en Google Cloud en sí**, ni cuánto termina cobrando Google
-(ver "Costo").
+El dominio `<ip-con-guiones>.sslip.io` resuelve solo a la IP, sin registrar
+nada. Cuando exista el dominio de la tienda se puede pasar a
+`wa.mk-pets.com.ar` cambiando `WA_DOMAIN` en el `.env` de la máquina.
 
-Un detalle que costó un intento fallido: con el dispositivo presentándose como
-"MK-Pets", WhatsApp rechazó la vinculación ("No se pudo vincular el
-dispositivo"); con "Evolution" (el valor por defecto) funcionó. No hay certeza
-de que esa haya sido la causa, pero el `CONFIG_SESSION_PHONE_CLIENT` quedó en
-el valor que funcionó. No lo cambies.
-
-Lo que ya está hecho: el usuario y el schema en Supabase, las tablas de
-Evolution migradas, y el archivo `infra/evolution/.env` en tu PC con las
-credenciales (no se sube a git).
+En Netlify están cargadas `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` y
+`EVOLUTION_INSTANCE`.
 
 ## Costo: qué mirar
 
@@ -36,144 +37,89 @@ credenciales (no se sube a git).
   `us-east1`.
 - **Duda abierta:** Google cobra aparte la IP pública en las máquinas comunes
   (unos USD 3–4 por mes) y su documentación no aclara si la gratuita queda
-  exenta. Se ve en la primera factura. Por eso el paso 1 es la alerta.
-- Si la cuenta es nueva, Google da 90 días de prueba con crédito. Al terminar
-  pide "activar" la cuenta; hay que hacerlo para que la máquina siga prendida.
-  Lo gratuito sigue siendo gratuito.
+  exenta. Se ve en la primera factura; la alerta de USD 1 avisa por mail.
+  Si la cobran, conviene mudarse a un VPS pago (ver al final).
 
-## 1. Cuenta y alerta de gasto
+## Lo que se aprendió al montarlo
 
-1. Entrá a <https://console.cloud.google.com>, creá la cuenta (pide tarjeta) y
-   un proyecto, por ejemplo `mkpets`.
-2. **Facturación → Presupuestos y alertas → Crear presupuesto:** importe
-   USD 1, con aviso por mail al 50 % y al 100 %.
+- **Memoria:** ~170 MB recién arrancado, ~250 MB con la sesión activa. Entra
+  cómodo en 1 GB.
+- **La sesión sobrevive a los reinicios de la misma máquina** (las claves
+  quedan en su disco).
+- **La sesión NO se muda a otra máquina.** En una prueba volvió sola con el
+  disco vacío; al hacerlo de nuevo, WhatsApp la dio de baja (código 401). Al
+  cambiar de máquina hay que contar con escanear el QR otra vez.
+- **Vincular solo funciona sobre una instancia limpia.** Si la instancia
+  arrastra datos de una sesión anterior (aunque esté cerrada), el teléfono
+  responde "No se pudo vincular el dispositivo". Pasó dos veces. La solución es
+  borrar la instancia y crearla de nuevo antes de escanear (ver abajo).
+- Crear un pedido tarda unos segundos más cuando el WhatsApp va con imagen,
+  porque el sitio espera a que el aviso salga.
 
-## 2. Crear la máquina
+## Volver a vincular el teléfono
 
-Arriba a la derecha, abrí **Cloud Shell** (el ícono `>_`) y pegá:
+Hace falta si WhatsApp cierra la sesión (el teléfono pasó ~14 días sin
+conexión, o se cerró desde "Dispositivos vinculados") o para cambiar de número.
+
+1. Borrar la instancia y crear una limpia. En PowerShell, desde `D:\MK-Pets`:
+
+   ```powershell
+   $env:EVOLUTION_API_URL="https://35-254-138-207.sslip.io"; node --env-file=infra/evolution/.env infra/evolution/reset-instance.mjs
+   ```
+
+2. Mostrar el QR:
+
+   ```powershell
+   $env:EVOLUTION_API_URL="https://35-254-138-207.sslip.io"; node --env-file=infra/evolution/.env infra/evolution/qr-server.mjs
+   ```
+
+3. Abrir <http://localhost:8099> y escanear desde WhatsApp → Dispositivos
+   vinculados. La página avisa cuando queda conectado.
+
+El número que escanea es el remitente de los avisos.
+
+## Cómo se creó (para repetirlo)
+
+Todo desde Cloud Shell (`>_` en la consola de Google Cloud), con el proyecto ya
+creado y con facturación:
 
 ```bash
 gcloud services enable compute.googleapis.com
 ```
 
 ```bash
-gcloud compute instances create mkpets-wa --zone=us-central1-a --machine-type=e2-micro --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud --boot-disk-size=30GB --boot-disk-type=pd-standard --tags=mkpets-web
+TOKEN=$(openssl rand -hex 16); gcloud compute instances create mkpets-wa --zone=us-central1-a --machine-type=e2-micro --image-family=ubuntu-2404-lts-amd64 --image-project=ubuntu-os-cloud --boot-disk-size=30GB --boot-disk-type=pd-standard --tags=mkpets-web --metadata=mkpets-upload-token=$TOKEN,startup-script='curl -fsSL https://raw.githubusercontent.com/Gaston-Sartini/MK-Pets/main/infra/evolution/gcp-bootstrap.sh | bash'; echo TOKEN=$TOKEN
 ```
 
 ```bash
 gcloud compute firewall-rules create mkpets-web --allow=tcp:80,tcp:443 --target-tags=mkpets-web
 ```
 
-Al terminar muestra la **EXTERNAL_IP**. Anotala.
-
 Los tres valores que hacen que sea gratis son `e2-micro`, `us-central1-a` y
-`pd-standard`. Si la creás desde los menús, el disco por defecto es otro y se cobra.
+`pd-standard`. Desde los menús, el disco por defecto es otro y se cobra.
 
-## 3. Un nombre para la máquina
-
-Netlify necesita llegar por HTTPS, y para eso hace falta un nombre de dominio.
-Gratis, con DuckDNS:
-
-1. Entrá a <https://www.duckdns.org> con tu cuenta de Google.
-2. Creá un subdominio, por ejemplo `mkpets-wa`, y poné la IP del paso 2.
-
-Queda `mkpets-wa.duckdns.org`. Cuando exista el dominio de la tienda se cambia
-por `wa.mk-pets.com.ar`.
-
-La IP puede cambiar si alguna vez **apagás** la máquina (no si la reiniciás).
-Si pasa, actualizala en DuckDNS.
-
-## 4. Preparar la máquina
-
-En Cloud Shell:
+La máquina se configura sola con [gcp-bootstrap.sh](gcp-bootstrap.sh) (swap,
+Docker, compose) y queda esperando el archivo de credenciales. Se le manda desde
+la PC, una sola vez, con la IP y el token que mostró el comando:
 
 ```bash
-gcloud compute ssh mkpets-wa --zone=us-central1-a
+curl -T infra/evolution/.env "https://LA-IP-CON-GUIONES.sslip.io/upload" -H "x-token: EL_TOKEN"
 ```
 
-Ya adentro de la máquina, memoria de intercambio (red de seguridad para 1 GB):
+Después conviene fijar la IP y borrar el token:
 
 ```bash
-sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-Docker:
-
-```bash
-curl -fsSL https://get.docker.com | sudo sh
-```
-
-## 5. Levantar Evolution
-
-```bash
-mkdir -p ~/mkpets-wa && cd ~/mkpets-wa && curl -fsSLO https://raw.githubusercontent.com/Gaston-Sartini/MK-Pets/main/infra/evolution/docker-compose.gcp.yml
-```
-
-Creá el archivo de credenciales:
-
-```bash
-nano .env
-```
-
-Pegá el contenido de `D:\MK-Pets\infra\evolution\.env` de tu PC, cambiá la
-línea `WA_DOMAIN=` por tu subdominio (`WA_DOMAIN=mkpets-wa.duckdns.org`),
-guardá con `Ctrl+O`, `Enter`, y salí con `Ctrl+X`.
-
-```bash
-sudo docker compose -f docker-compose.gcp.yml up -d
-```
-
-En un par de minutos, `https://mkpets-wa.duckdns.org` tiene que responder con
-el mensaje de bienvenida de Evolution.
-
-## 6. Vincular el teléfono
-
-La sesión que se vinculó en la prueba local quedó guardada en Supabase, así
-que Evolution debería arrancar **ya conectado**, sin escanear nada. Para verlo,
-en tu PC, desde `D:\MK-Pets` (PowerShell):
-
-```powershell
-$env:EVOLUTION_API_URL="https://mkpets-wa.duckdns.org"; node --env-file=infra/evolution/.env infra/evolution/qr-server.mjs
-```
-
-Abrí <http://localhost:8099>. Si dice "WhatsApp conectado", listo. Si muestra
-un QR, escanealo desde WhatsApp → Dispositivos vinculados.
-
-**No levantes la misma instancia en dos lugares a la vez** (tu PC y la nube):
-WhatsApp las desconecta entre sí.
-
-El número vinculado es el remitente de los avisos. Hoy es el de la prueba; para
-cambiarlo por el de la tienda, cerrá la sesión desde el teléfono (Dispositivos
-vinculados → Evolution → Cerrar sesión) y escaneá el QR con el otro número.
-
-## 7. Conectar el sitio
-
-En `D:\MK-Pets`, con el valor de `EVOLUTION_API_KEY` de `infra/evolution/.env`:
-
-```bash
-netlify env:set EVOLUTION_API_URL "https://mkpets-wa.duckdns.org"
+gcloud compute addresses create mkpets-wa-ip --region=us-central1 --addresses=LA_IP
 ```
 
 ```bash
-netlify env:set EVOLUTION_API_KEY "PEGAR_LA_KEY"
+gcloud compute instances remove-metadata mkpets-wa --zone=us-central1-a --keys=mkpets-upload-token
 ```
-
-```bash
-netlify env:set EVOLUTION_INSTANCE "mi-bot"
-```
-
-Y volver a desplegar para que el sitio tome las variables:
-
-```bash
-gh workflow run Deploy
-```
-
-Después, un pedido de prueba en el sitio con tu propio teléfono.
 
 ## Si no funciona: cómo volver atrás
 
-Nada de esto toca la tienda. El sitio funciona igual con o sin WhatsApp: sin
-las variables `EVOLUTION_*`, simplemente no manda avisos.
+Nada de esto toca la tienda. Sin las variables `EVOLUTION_*`, el sitio funciona
+igual y simplemente no manda avisos.
 
 1. **Desconectar el sitio:**
 
@@ -183,10 +129,14 @@ las variables `EVOLUTION_*`, simplemente no manda avisos.
 
    y volver a desplegar con `gh workflow run Deploy`.
 
-2. **Borrar la máquina** (corta cualquier costo):
+2. **Borrar la máquina y su IP** (corta cualquier costo):
 
    ```bash
    gcloud compute instances delete mkpets-wa --zone=us-central1-a
+   ```
+
+   ```bash
+   gcloud compute addresses delete mkpets-wa-ip --region=us-central1
    ```
 
    ```bash
@@ -205,16 +155,17 @@ las variables `EVOLUTION_*`, simplemente no manda avisos.
    ```
 
 **Para pasar a un VPS pago** no hace falta el paso 4: se copia el mismo
-`docker-compose.gcp.yml` y el mismo `.env` a la máquina nueva, se apunta el
-dominio a su IP y se levanta. La sesión de WhatsApp está en Supabase y vuelve
-sola (probado simulando una máquina nueva con el disco vacío). Apagá la
-máquina vieja antes de prender la nueva.
+`docker-compose.gcp.yml` y el mismo `.env` a la máquina nueva, se cambia
+`WA_DOMAIN`, se levanta, y se vuelve a vincular el teléfono (sección de arriba).
+Apagá la máquina vieja antes: la misma sesión en dos lugares hace que WhatsApp
+las desconecte.
 
 ## Mantenimiento
 
-- Estado: `curl -s https://mkpets-wa.duckdns.org/instance/connectionState/mi-bot -H "apikey: ..."`
+- Estado: `curl -s https://35-254-138-207.sslip.io/instance/connectionState/mi-bot -H "apikey: ..."`
   tiene que decir `"state":"open"`.
+- Entrar a la máquina: desde Cloud Shell, `gcloud compute ssh mkpets-wa --zone=us-central1-a`.
+  Los archivos están en `/opt/mkpets-wa`.
 - Memoria: `sudo docker stats --no-stream`.
-- Logs: `sudo docker compose -f docker-compose.gcp.yml logs -f evolution`.
-- Si el teléfono pasa ~14 días sin conexión, WhatsApp desvincula el
-  dispositivo: se repite el paso 6.
+- Logs: `sudo docker compose -f /opt/mkpets-wa/docker-compose.gcp.yml logs -f evolution`.
+- No levantes la misma instancia en la PC y en la nube a la vez.
