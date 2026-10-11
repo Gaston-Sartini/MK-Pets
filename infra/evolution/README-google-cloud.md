@@ -9,9 +9,21 @@ una versión liviana de Evolution (`docker-compose.gcp.yml`):
   pedidos ni nada de la tienda.
 - **Sin Redis.**
 
-Probado en local con el mismo límite de memoria: usa ~170 MB con la instancia
-creada. **No está probado en Google Cloud en sí**, ni cuánto termina cobrando
-Google (ver "Costo").
+Probado en local (2026-10-10) con el mismo límite de memoria:
+
+- Vincula el teléfono y envía avisos con imagen.
+- Usa ~250 MB con la sesión activa (el tope configurado es 750 MB).
+- La sesión vuelve sola tras un reinicio, **y también en una máquina nueva con
+  el disco vacío**: alcanza con que apunte al mismo Supabase.
+
+**No está probado en Google Cloud en sí**, ni cuánto termina cobrando Google
+(ver "Costo").
+
+Un detalle que costó un intento fallido: con el dispositivo presentándose como
+"MK-Pets", WhatsApp rechazó la vinculación ("No se pudo vincular el
+dispositivo"); con "Evolution" (el valor por defecto) funcionó. No hay certeza
+de que esa haya sido la causa, pero el `CONFIG_SESSION_PHONE_CLIENT` quedó en
+el valor que funcionó. No lo cambies.
 
 Lo que ya está hecho: el usuario y el schema en Supabase, las tablas de
 Evolution migradas, y el archivo `infra/evolution/.env` en tu PC con las
@@ -116,16 +128,23 @@ el mensaje de bienvenida de Evolution.
 
 ## 6. Vincular el teléfono
 
-En tu PC, desde `D:\MK-Pets` (PowerShell):
+La sesión que se vinculó en la prueba local quedó guardada en Supabase, así
+que Evolution debería arrancar **ya conectado**, sin escanear nada. Para verlo,
+en tu PC, desde `D:\MK-Pets` (PowerShell):
 
 ```powershell
 $env:EVOLUTION_API_URL="https://mkpets-wa.duckdns.org"; node --env-file=infra/evolution/.env infra/evolution/qr-server.mjs
 ```
 
-Abrí <http://localhost:8099> y escaneá el QR desde WhatsApp → Dispositivos
-vinculados. La instancia `mi-bot` ya está creada.
+Abrí <http://localhost:8099>. Si dice "WhatsApp conectado", listo. Si muestra
+un QR, escanealo desde WhatsApp → Dispositivos vinculados.
 
-El número que escanea es el remitente de los avisos: conviene el de la tienda.
+**No levantes la misma instancia en dos lugares a la vez** (tu PC y la nube):
+WhatsApp las desconecta entre sí.
+
+El número vinculado es el remitente de los avisos. Hoy es el de la prueba; para
+cambiarlo por el de la tienda, cerrá la sesión desde el teléfono (Dispositivos
+vinculados → Evolution → Cerrar sesión) y escaneá el QR con el otro número.
 
 ## 7. Conectar el sitio
 
@@ -187,8 +206,9 @@ las variables `EVOLUTION_*`, simplemente no manda avisos.
 
 **Para pasar a un VPS pago** no hace falta el paso 4: se copia el mismo
 `docker-compose.gcp.yml` y el mismo `.env` a la máquina nueva, se apunta el
-dominio a su IP y se levanta. Los datos de la instancia están en Supabase, así
-que la sesión de WhatsApp debería conservarse; si no, se repite el paso 6.
+dominio a su IP y se levanta. La sesión de WhatsApp está en Supabase y vuelve
+sola (probado simulando una máquina nueva con el disco vacío). Apagá la
+máquina vieja antes de prender la nueva.
 
 ## Mantenimiento
 

@@ -68,8 +68,11 @@ const PAGE = `<!doctype html>
 http.createServer(async (req, res) => {
   if (req.url === '/status') {
     try {
+      // Primero consultar y recién después escribir la respuesta: si Evolution
+      // está reiniciando, status() lanza y hay que poder responder el 502.
+      const body = JSON.stringify(await status())
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      res.end(JSON.stringify(await status()))
+      res.end(body)
     } catch (e) {
       res.writeHead(502, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ state: 'error' }))
