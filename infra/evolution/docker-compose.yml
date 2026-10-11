@@ -65,7 +65,7 @@ services:
       QRCODE_LIMIT: 30
       LOG_LEVEL: ERROR,WARN
       LOG_BAILEYS: error
-      CONFIG_SESSION_PHONE_CLIENT: MK-Pets
+      CONFIG_SESSION_PHONE_CLIENT: Evolution
       CONFIG_SESSION_PHONE_NAME: Chrome
       DEL_INSTANCE: "false"
     volumes:
