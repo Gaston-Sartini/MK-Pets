@@ -112,8 +112,9 @@ export async function Footer() {
           )}
         </div>
 
-        {/* BOTTOM BAR */}
-        <div className="border-t border-white/10 mt-8 pt-6
+        {/* BOTTOM BAR — en celular deja libre la columna del botón del chat (fijo abajo a la
+            derecha), que si no tapa los links legales y el de Admin */}
+        <div className="border-t border-white/10 mt-8 pt-6 pr-20 sm:pr-0
                         flex flex-col sm:flex-row items-center justify-between
                         gap-3 text-xs font-body text-white/40">
           <span>© {new Date().getFullYear()} MK-Pets. Todos los derechos reservados.</span>
