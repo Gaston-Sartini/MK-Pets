@@ -11,6 +11,7 @@
  *   - Construir el chat en React nos da control total sobre el rendering de
  *     cards, los CTAs y la conexión al carrito (Zustand store).
  */
+import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useCartStore } from '@/store/cart-store'
 import { useToastStore } from '@/store/toast-store'
@@ -88,6 +89,10 @@ export default function MKPetsChat() {
 
   const addItem    = useCartStore((s) => s.addItem)
   const openDrawer = useCartStore((s) => s.openDrawer)
+  const isDrawerOpen = useCartStore((s) => s.isDrawerOpen)
+  // Al pagar y al ver un pedido no hace falta el vendedor, y el botón tapaba totales y botones
+  const pathname = usePathname()
+  const hiddenHere = pathname.startsWith('/checkout') || pathname.startsWith('/pedido')
   const addToast   = useToastStore((s) => s.addToast)
 
   // Marcar mounted en el primer client effect (no corre en SSR)
@@ -193,10 +198,8 @@ export default function MKPetsChat() {
             addToast({ message: `${action.name} quitado del carrito`, type: 'success' })
           }
         }
-        // Si cambió el carrito, abrimos el drawer para que vea el resultado
-        if (data.actions.length > 0) {
-          openDrawer()
-        }
+        // No se abre el carrito: quedaba debajo del chat, los dos encimados. El vendedor
+        // ya confirma lo que hizo, hay un aviso y el contador del carrito se actualiza.
       }
 
       const botMsg: ChatMessage = {
@@ -232,15 +235,23 @@ export default function MKPetsChat() {
       unitPrice:    card.unitPrice,
     })
     addToast({ message: `✓ ${card.name} agregado 🐾`, type: 'success' })
+  }
+
+  // Ir al carrito desde el chat: se cierra el chat para que no tape el carrito
+  function goToCart() {
+    setIsOpen(false)
     openDrawer()
   }
 
   // Evita hydration mismatch: SSR devuelve null, el browser monta tras hydratar.
   if (!mounted) return null
 
+  if (hiddenHere && !isOpen) return null
+
   return (
     <>
-      {/* Burbuja flotante */}
+      {/* Burbuja flotante. Con el carrito abierto se oculta: si no, queda encima de "Ir al checkout". */}
+      {(!isDrawerOpen || isOpen) && (
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
@@ -262,6 +273,7 @@ export default function MKPetsChat() {
           <span className="absolute -top-1 -right-1 w-3 h-3 bg-mk-error rounded-full ring-2 ring-white animate-bounce-badge" />
         )}
       </button>
+      )}
 
       {/* Panel del chat */}
       {isOpen && (
@@ -303,7 +315,7 @@ export default function MKPetsChat() {
                 message={m}
                 onAdd={handleAddToCart}
                 // "Ir al carrito" abre el carrito directamente: no hace falta preguntarle al vendedor
-                onSuggest={(text) => (/^\s*(ir|ver|abrir)\s+(al\s+|el\s+|mi\s+)?carrito\s*$/i.test(text) ? openDrawer() : send(text))}
+                onSuggest={(text) => (/^\s*(ir|ver|abrir)\s+(al\s+|el\s+|mi\s+)?carrito\s*$/i.test(text) ? goToCart() : send(text))}
               />
             ))}
             {sending && (

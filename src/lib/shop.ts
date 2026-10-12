@@ -27,6 +27,14 @@ export function enabledPaymentMethods(): PaymentMethod[] {
 }
 
 /** URL pública del sitio, sin barra final (evita `//pedido/...` al armar links). */
+/**
+ * Dirección pública del sitio, para links canónicos, sitemap y vista previa al
+ * compartir. Sale de NEXT_PUBLIC_BASE_URL: el día que haya dominio propio se cambia
+ * esa variable y nada más. (Estaba escrito a mano un dominio que todavía no existe:
+ * Google y WhatsApp recibían direcciones que no abren.)
+ */
+export const SITE_URL = (process.env.NEXT_PUBLIC_BASE_URL || 'https://mk-pets.netlify.app').replace(/\/+$/, '')
+
 export function getBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_BASE_URL ?? '').replace(/\/+$/, '')
 }

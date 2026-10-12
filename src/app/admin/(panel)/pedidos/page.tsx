@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { formatPrice, parseDbDate } from '@/lib/utils'
 import { PAYMENT_METHOD_LABEL, SHOP_TIMEZONE } from '@/lib/shop'
+import { normalizeArgPhone } from '@/lib/phone'
 
 const STATUSES = ['PENDING','CONFIRMED','PREPARING','SHIPPED','DELIVERED','CANCELLED'] as const
 const STATUS_LABEL: Record<string, string> = {
@@ -196,7 +197,7 @@ export default function AdminPedidosPage() {
                     <td className="px-4 py-3">
                       <p className="font-medium text-mk-dark">{o.customerName}</p>
                       <a
-                        href={`https://wa.me/${o.phone.replace(/\D/g, '')}`}
+                        href={`https://wa.me/${normalizeArgPhone(o.phone)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-mk-orange hover:underline"

@@ -57,7 +57,7 @@ export function DeliveryForm({ onSubmit, isLoading, defaultValues }: Props) {
           id="address"
           type="text"
           autoComplete="street-address"
-          placeholder="Calle y número, piso/depto, ciudad"
+          placeholder="Calle y número, piso/depto, barrio"
           aria-describedby={errors.address ? 'err-address' : undefined}
           aria-invalid={!!errors.address}
           className={['input-field', errors.address ? 'border-mk-error ring-1 ring-mk-error' : ''].join(' ')}
@@ -80,14 +80,14 @@ export function DeliveryForm({ onSubmit, isLoading, defaultValues }: Props) {
           id="phone"
           type="tel"
           autoComplete="tel"
-          placeholder="11 6669 8395"
+          placeholder="11 2345 6789"
           aria-describedby={errors.phone ? 'err-phone' : 'hint-phone'}
           aria-invalid={!!errors.phone}
           className={['input-field', errors.phone ? 'border-mk-error ring-1 ring-mk-error' : ''].join(' ')}
           {...register('phone')}
         />
         <p id="hint-phone" className="mt-1 text-xs text-mk-mid">
-          Ejemplo: 11 6669 8395
+          Con código de área. Ejemplo: 11 2345 6789
         </p>
         {errors.phone && (
           <p id="err-phone" role="alert" className="mt-1 text-xs text-mk-error">

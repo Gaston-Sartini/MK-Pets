@@ -1,3 +1,4 @@
+import { SITE_URL } from '@/lib/shop'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -12,7 +13,7 @@ import type { Product } from '@/types'
 
 interface PageProps { params: { slug: string } }
 
-const BASE_URL = 'https://mk-pets.com.ar'
+const BASE_URL = SITE_URL
 
 /** Pre-build all published product slugs at build time */
 export async function generateStaticParams() {

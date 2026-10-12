@@ -24,14 +24,23 @@ export default function CheckoutPage() {
   const [isLoading, setIsLoading]         = useState(false)
   const [orderPlaced, setOrderPlaced]     = useState(false)
 
+  // El carrito se guarda en el navegador y se lee recién después del primer render:
+  // hasta que termina de cargarse parece vacío. Sin esperar, recargar el checkout (o
+  // abrirlo desde un link) mandaba al inicio a alguien con productos en el carrito.
+  const [cartLoaded, setCartLoaded] = useState(false)
+  useEffect(() => {
+    if (useCartStore.persist.hasHydrated()) setCartLoaded(true)
+    return useCartStore.persist.onFinishHydration(() => setCartLoaded(true))
+  }, [])
+
   // Redirect if cart is empty
   useEffect(() => {
-    if (items.length === 0 && !orderPlaced) {
+    if (cartLoaded && items.length === 0 && !orderPlaced) {
       router.replace('/')
     }
-  }, [items.length, orderPlaced, router])
+  }, [cartLoaded, items.length, orderPlaced, router])
 
-  if (items.length === 0) return null
+  if (!cartLoaded || items.length === 0) return null
 
   function handleNextStep() {
     if (!paymentMethod) {

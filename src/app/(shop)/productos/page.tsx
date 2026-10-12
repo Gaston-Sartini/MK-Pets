@@ -5,7 +5,7 @@ import { ProductGrid } from '@/components/catalog/ProductGrid'
 import { CategoryChips } from '@/components/catalog/CategoryChips'
 import { ProductCardSkeleton } from '@/components/ui/Skeleton'
 import { getProducts, getCategories, getCategoryBySlug } from '@/lib/queries'
-import { describeCatalog } from '@/lib/shop'
+import { SITE_URL, describeCatalog } from '@/lib/shop'
 import type { Metadata } from 'next'
 import type { Product } from '@/types'
 
@@ -17,7 +17,7 @@ interface PageProps {
   searchParams: { cat?: string; q?: string; cursor?: string }
 }
 
-const BASE_URL = 'https://mk-pets.com.ar'
+const BASE_URL = SITE_URL
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const cat = searchParams.cat

@@ -1,3 +1,4 @@
+import { SITE_URL } from '@/lib/shop'
 import type { Metadata } from 'next'
 import { Nunito, Inter } from 'next/font/google'
 import { JsonLd } from '@/components/seo/JsonLd'
@@ -17,7 +18,7 @@ const inter = Inter({
   display: 'swap',
 })
 
-const BASE_URL = 'https://mk-pets.com.ar'
+const BASE_URL = SITE_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -104,7 +105,6 @@ const organizationSchema = {
   contactPoint: {
     '@type': 'ContactPoint',
     contactType: 'customer service',
-    email: 'hola@mk-pets.com.ar',
     availableLanguage: 'Spanish',
   },
   sameAs: [],

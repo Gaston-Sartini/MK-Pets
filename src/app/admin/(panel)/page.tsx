@@ -17,14 +17,22 @@ async function getStats(supabase: SupabaseClient) {
     supabase.from('Product').select('*', { count: 'exact', head: true }),
     supabase.from('Product').select('*', { count: 'exact', head: true }).eq('isActive', true),
     supabase.from('Order').select('*', { count: 'exact', head: true }).in('status', ['PENDING', 'CONFIRMED']),
-    supabase.from('Product').select('id, name, stock').eq('isActive', true).lte('stock', 5).order('stock').limit(5),
+    supabase.from('Product').select('id, name, stock, variants:ProductVariant(label, stock)').eq('isActive', true),
     supabase.from('Order')
       .select('orderNumber, customerName, total, status, createdAt')
       .order('createdAt', { ascending: false })
       .limit(6),
   ])
 
-  return { totalProducts, activeProducts, pendingOrders, lowStock: lowStock ?? [], recentOrders: recentOrders ?? [] }
+  // Un producto con variantes se vende por variante: lo que importa es el stock de cada una.
+  const low = ((lowStock ?? []) as { id: string; name: string; stock: number; variants: { label: string; stock: number }[] }[])
+    .flatMap(p => (p.variants.length
+      ? p.variants.map(v => ({ id: `${p.id}:${v.label}`, name: `${p.name} (${v.label})`, stock: v.stock }))
+      : [{ id: p.id, name: p.name, stock: p.stock }]))
+    .filter(p => p.stock <= 5)
+    .sort((a, b) => a.stock - b.stock)
+
+  return { totalProducts, activeProducts, pendingOrders, lowStock: low, recentOrders: recentOrders ?? [] }
 }
 
 const STATUS_LABEL: Record<string, string> = {

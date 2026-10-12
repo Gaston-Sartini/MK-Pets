@@ -4,6 +4,7 @@ import { buildResponse, parseModelJson, sanitizeHistory, retryDelayMs } from '@/
 import { generateOrderNumber, parseDbDate, canModifyOrder } from '@/lib/utils'
 import { isAdminUser } from '@/lib/admin-auth'
 import { describeCatalog, describeCatalogTitle } from '@/lib/shop'
+import { isArgPhone, deliveryFormSchema } from '@/lib/validations/checkout'
 import { productSchema, orderStatusSchema, slugify } from '@/lib/validations/admin'
 
 describe('normalizeArgPhone', () => {
@@ -255,5 +256,24 @@ describe('describeCatalog', () => {
   it('usa "e" antes de una palabra que empieza con i, y no se rompe sin categorías', () => {
     expect(describeCatalog(['Perros', 'Indumentaria'])).toBe('alimentos e indumentaria')
     expect(describeCatalog([])).toBe('productos')
+  })
+})
+
+describe('teléfono del checkout', () => {
+  it('acepta las formas en que la gente escribe su número', () => {
+    for (const phone of ['11 2345 6789', '1123456789', '+54 9 11 2345-6789', '54 9 11 2345 6789', '011 15 2345-6789', '(11) 2345 6789', '0221 456 7890', '+54 221 4567890']) {
+      expect(isArgPhone(phone), phone).toBe(true)
+    }
+  })
+
+  it('rechaza lo que no es un teléfono completo', () => {
+    for (const phone of ['abc', '1234', '2345 6789', '11 2345 678', '11 2345 6789 0000', 'tel: 1123456789']) {
+      expect(isArgPhone(phone), phone).toBe(false)
+    }
+  })
+
+  it('lo guarda solo con números', () => {
+    const parsed = deliveryFormSchema.parse({ customerName: 'Ana Pérez', address: 'Calle Falsa 123, Caballito', phone: '+54 9 11 2345-6789' })
+    expect(parsed.phone).toBe('5491123456789')
   })
 })
