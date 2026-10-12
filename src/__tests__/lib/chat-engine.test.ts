@@ -343,6 +343,10 @@ describe('chat engine: armado de la respuesta', () => {
     expect(res.reply).toMatch(/^Tu carrito suma \$\s?145\.400/)
     expect(buildResponse({ reply: 'Son $5.000.' }, catalog, ctx('cuánto es todo?')).reply).toBe('Todavía no tenés nada en el carrito.')
     expect(asksTotal('cuánto sale el envío de todo el pedido?')).toBe(false)
+
+    // Si además pregunta cómo pagar, se lleva las dos respuestas
+    const both = buildResponse({ reply: 'Son $145.400.' }, catalog, ctx('cuánto es todo? y cómo pago?', [], cart))
+    expect(both.reply).toMatch(/^Tu carrito suma .*Podés pagar por transferencia/)
   })
 
   it('"mejor poneme 2" cambia la cantidad de lo último que sumó', () => {

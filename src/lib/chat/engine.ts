@@ -1323,11 +1323,6 @@ export function buildResponse(
     reply = '¡Dale! Cuando quieras volvés, acá estoy. 🐾'
   }
 
-  // Preguntó cómo pagar (o por un medio que no aceptamos): que se lleve la respuesta completa.
-  if (PAYMENT_TOPIC.test(context.message) && !/transferencia|efectivo/i.test(reply)) {
-    reply = `${reply.replace(/\s+$/, '')} Podés pagar ${paymentOptions()}.`
-  }
-
   // Preguntó cuánto es todo: la suma la hace el código (el modelo llegó a decir el doble).
   if (guardEnabled && asksTotal(context.message) && allowed.length === 0 && removals.length === 0) {
     const total = cartTotal(cart, catalog)
@@ -1338,6 +1333,11 @@ export function buildResponse(
       reply = `Tu carrito suma ${formatPrice(total)}, con envío gratis en CABA.`
       cards = []
     }
+  }
+
+  // Preguntó cómo pagar (o por un medio que no aceptamos): que se lleve la respuesta completa.
+  if (PAYMENT_TOPIC.test(context.message) && !/transferencia|efectivo/i.test(reply)) {
+    reply = `${reply.replace(/\s+$/, '')} Podés pagar ${paymentOptions()}.`
   }
 
   // Preguntó algo que no figura en ningún lado: respuesta honesta y siempre la misma.
