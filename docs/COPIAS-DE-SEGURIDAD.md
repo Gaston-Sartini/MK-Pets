@@ -4,7 +4,9 @@
 
 Todos los domingos a las 4:00 se hace sola una copia de la base: productos, categorías, pedidos y datos de clientes. La hace GitHub (`.github/workflows/backup.yml`) y la deja guardada 90 días.
 
-Las fotos de los productos no entran en esta copia: están en el almacenamiento de Supabase.
+Las fotos de los productos no entran en esta copia: están en el almacenamiento de Supabase. Tampoco entra el usuario del panel (email y contraseña del admin): si hubiera que armar todo de cero, se crea de nuevo desde Supabase.
+
+Probada el 12/10/2026: se bajó la copia, se descifró con la clave y traía los 22 productos, las 7 categorías y las variantes.
 
 ## Dónde está
 
@@ -23,7 +25,9 @@ Si se pierden las dos, las copias viejas no sirven. Conviene anotarla en un luga
 
 ## Si la copia falla
 
-Se abre solo un aviso en GitHub con la etiqueta `copia`.
+Se abre solo un aviso en GitHub con la etiqueta `copia`, y se cierra solo cuando la copia vuelve a andar.
+
+Un detalle técnico por si vuelve a fallar con "Network is unreachable": la dirección directa de la base (`db.….supabase.co`) solo funciona por IPv6 y las máquinas de GitHub no tienen IPv6. Por eso la copia entra por el *pooler* de Supabase (`aws-1-sa-east-1.pooler.supabase.com`), que es la misma base con otra puerta.
 
 ## Cómo restaurar
 

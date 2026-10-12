@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
+      POOLER_HOST: aws-1-sa-east-1.pooler.supabase.com
 
     steps:
       - name: Volcar y cifrar
@@ -41,6 +42,10 @@ jobs:
           FECHA=$(date -u +%Y-%m-%d)
           # pg_dump no entiende los parámetros propios de Prisma (?pgbouncer=…)
           URL="${DIRECT_URL%%\?*}"
+          # La dirección directa de Supabase (db.<proyecto>.supabase.co) es solo IPv6 y
+          # las máquinas de GitHub no tienen IPv6: se entra por el pooler en modo sesión,
+          # que es la misma base con otra puerta (usuario postgres.<proyecto>).
+          URL=$(printf '%s' "$URL" | sed -E "s#://postgres:([^@]+)@db\.([a-z0-9]+)\.supabase\.co:5432/#://postgres.\2:\1@${POOLER_HOST}:5432/#")
           # Se usa el pg_dump de la imagen oficial: tiene que ser igual o más nuevo que el servidor
           docker run --rm -e PGURL="$URL" postgres:17 \
             sh -c 'pg_dump "$PGURL" --schema=public --no-owner --no-privileges --format=plain' \
@@ -62,6 +67,12 @@ jobs:
           path: mk-pets-*.sql.gz.gpg
           retention-days: 90
           if-no-files-found: error
+
+      - name: Cerrar el aviso si volvió a andar
+        run: |
+          for N in $(gh issue list --repo "$GITHUB_REPOSITORY" --label copia --state open --json number -q '.[].number'); do
+            gh issue close "$N" --repo "$GITHUB_REPOSITORY" --comment "La copia volvió a hacerse bien: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          done
 
       - name: Avisar si falló
         if: failure()

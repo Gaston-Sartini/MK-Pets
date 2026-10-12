@@ -10,6 +10,8 @@ on:
       - '**/*.md'
       - 'scripts/**'
       - '.github/workflows/chat-eval.yml'
+      - '.github/workflows/backup.yml'
+      - '.github/workflows/uptime.yml'
   workflow_dispatch:      # allow manual deploys from GitHub UI
 
 concurrency:
