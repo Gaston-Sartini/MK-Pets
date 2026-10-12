@@ -8,7 +8,8 @@ const TRUST_BADGES = [
   { icon: '⭐', text: 'Productos 100% originales' },
 ]
 
-export function HeroBanner() {
+/** `offer`: lo que se vende hoy, armado con las categorías que tienen productos (describeCatalogTitle). */
+export function HeroBanner({ offer }: { offer: string }) {
   return (
     <section className="relative overflow-hidden bg-mk-light">
       {/* PATAS DECORATIVAS */}
@@ -40,7 +41,7 @@ export function HeroBanner() {
             </p>
 
             <p className="font-body text-mk-mid text-base md:text-lg mb-7 max-w-md mx-auto md:mx-0">
-              Alimentos, snacks y productos de higiene para perros y gatos
+              {offer} para perros y gatos
               con envío gratis a CABA.
             </p>
 

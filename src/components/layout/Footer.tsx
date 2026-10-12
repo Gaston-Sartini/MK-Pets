@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { getCategories } from '@/lib/queries'
+import { describeCatalogTitle } from '@/lib/shop'
 
 const TRUST_BADGES = [
   { icon: '🔒', text: 'Compra Segura' },
@@ -55,7 +56,7 @@ export async function Footer() {
               Tu mascota, nuestra prioridad 🐾
             </p>
             <p className="font-body text-white/60 text-sm leading-relaxed">
-              Alimentos, snacks y productos de higiene para tu compañero
+              {describeCatalogTitle(categories.map(c => c.name))} para tu compañero
               con entrega a domicilio en CABA.
             </p>
           </div>

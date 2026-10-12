@@ -5,6 +5,7 @@ import { ProductGrid } from '@/components/catalog/ProductGrid'
 import { CategoryChips } from '@/components/catalog/CategoryChips'
 import { ProductCardSkeleton } from '@/components/ui/Skeleton'
 import { getProducts, getCategories, getCategoryBySlug } from '@/lib/queries'
+import { describeCatalog } from '@/lib/shop'
 import type { Metadata } from 'next'
 import type { Product } from '@/types'
 
@@ -51,10 +52,11 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     }
   }
 
+  const rubros = (await getCategories().catch(() => [])).map(c => c.name)
   return {
     title: 'Todos los productos para mascotas',
     description:
-      'Explorá nuestro catálogo completo de alimentos, snacks y productos de higiene para perros y gatos. Envío gratis a CABA.',
+      `Explorá nuestro catálogo completo de ${describeCatalog(rubros)} para perros y gatos. Envío gratis a CABA.`,
     alternates: {
       canonical: `${BASE_URL}/productos`,
     },

@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     template: '%s | MK-Pets',
   },
   description:
-    'Alimentos, snacks y productos de higiene para tu mascota con envío gratis a CABA. Tu tienda de mascotas online en Buenos Aires.',
+    'Todo para tu perro y tu gato, con envío gratis a CABA. Tu tienda de mascotas online en Buenos Aires.',
   keywords: [
     'mascotas',
     'alimento para gatos',
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'MK-Pets — Todo para tu mascota',
     description:
-      'Alimentos, snacks y productos de higiene para tu mascota. Envío gratis a CABA.',
+      'Todo para tu perro y tu gato. Envío gratis a CABA.',
     url: BASE_URL,
     siteName: 'MK-Pets',
     images: [
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'MK-Pets — Todo para tu mascota',
     description:
-      'Alimentos, snacks y productos de higiene para tu mascota. Envío gratis a CABA.',
+      'Todo para tu perro y tu gato. Envío gratis a CABA.',
     images: [`${BASE_URL}/og-image.png`],
   },
   robots: {
