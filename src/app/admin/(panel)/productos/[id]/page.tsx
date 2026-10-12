@@ -6,7 +6,8 @@ import ProductForm from '@/components/admin/ProductForm'
 
 export const dynamic = 'force-dynamic'
 
-export default async function EditarProductoPage({ params }: { params: { id: string } }) {
+export default async function EditarProductoPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   // RLS solo deja ver productos inactivos y pedidos con la sesión del admin
   const supabase = await getAdminClient()
   if (!supabase) redirect('/admin/login')

@@ -14,12 +14,13 @@ export const dynamic = 'auto'
 export const revalidate = 120
 
 interface PageProps {
-  searchParams: { cat?: string; q?: string; cursor?: string }
+  searchParams: Promise<{ cat?: string; q?: string; cursor?: string }>
 }
 
 const BASE_URL = SITE_URL
 
-export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const searchParams = await props.searchParams
   const cat = searchParams.cat
   const q = searchParams.q
 
@@ -69,7 +70,8 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   }
 }
 
-export default async function ProductosPage({ searchParams }: PageProps) {
+export default async function ProductosPage(props: PageProps) {
+  const searchParams = await props.searchParams
   const { cat, q, cursor } = searchParams
 
   let products: Product[] = []

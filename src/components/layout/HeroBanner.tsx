@@ -76,13 +76,14 @@ export function HeroBanner({ offer }: { offer: string }) {
           </div>
 
           {/* IMAGEN HERO */}
-          <div className="flex-1 flex justify-center order-1 md:order-2">
+          {/* w-full: sin un ancho propio, en el celular la foto medía 0 hasta cargar y empujaba el texto */}
+          <div className="w-full flex-1 flex justify-center order-1 md:order-2">
             <div className="relative w-full max-w-sm md:max-w-md lg:max-w-lg">
               <Image
                 src="/assets/hero-main.png"
                 alt="Gatos, perros y productos MK-Pets — alimentos, snacks y más"
                 width={600}
-                height={450}
+                height={400}
                 className="w-full h-auto object-contain drop-shadow-xl"
                 priority
                 sizes="(max-width: 768px) 100vw, 50vw"

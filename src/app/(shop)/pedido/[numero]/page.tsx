@@ -13,14 +13,15 @@ import { OrderTimeline } from '@/components/order/OrderTimeline'
 import { CancelOrderButton, ReorderButton } from '@/components/order/OrderActions'
 
 interface Props {
-  params:      { numero: string }
-  searchParams: { mp?: string; payment_id?: string }
+  params: Promise<{ numero: string }>
+  searchParams: Promise<{ mp?: string; payment_id?: string }>
 }
 
 // Siempre el estado real del pedido: nunca una versión cacheada.
 export const dynamic = 'force-dynamic'
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata(props: Props): Promise<Metadata> {
+  const params = await props.params
   return {
     title: `Pedido ${params.numero}`,
     robots: {
@@ -39,7 +40,9 @@ const STATUS_LABEL: Record<string, { label: string; color: string; icon: string 
   CANCELLED:  { label: 'Cancelado',      color: 'text-red-700 bg-red-50 border-red-200',          icon: '❌' },
 }
 
-export default async function OrderPage({ params, searchParams }: Props) {
+export default async function OrderPage(props: Props) {
+  const searchParams = await props.searchParams
+  const params = await props.params
   // Al volver de MercadoPago sincronizamos el pago contra su API en el momento,
   // sin depender de que el webhook ya haya llegado.
   if (searchParams.mp && searchParams.payment_id) {
