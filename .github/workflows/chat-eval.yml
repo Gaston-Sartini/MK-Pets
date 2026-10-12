@@ -15,6 +15,11 @@ on:
   schedule:
     - cron: '0 12 * * 1'      # lunes 9:00 de Argentina
   workflow_dispatch:
+    inputs:
+      simular_falla:
+        description: 'Probar el aviso: da la corrida por mala aunque el vendedor ande bien'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,8 +64,10 @@ jobs:
 
       - name: Conversar con el vendedor
         id: eval
-        run: node scripts/chat-eval.mjs --url "$SITE_URL" --suite auto --reps 2 --min 95 --report informe.md
+        run: node scripts/chat-eval.mjs --url "$SITE_URL" --suite auto --reps 2 --min "$MINIMO" --report informe.md
         env:
+          # 101 % es imposible de alcanzar: sirve para probar que el aviso llega
+          MINIMO: ${{ inputs.simular_falla && '101' || '95' }}
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
