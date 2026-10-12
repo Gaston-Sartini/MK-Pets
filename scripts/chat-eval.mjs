@@ -1,32 +1,54 @@
 // Banco de conversaciones para medir al vendedor del chat.
 //
-// Correrlo después de tocar las instrucciones (src/lib/chat/engine.ts), de
-// cambiar de modelo o de proveedor, o cuando cambie mucho el catálogo.
+// Corre solo (.github/workflows/chat-eval.yml): después de cada publicación del
+// sitio y una vez por semana. Si el vendedor empeora, abre un aviso en GitHub.
 //
+// A mano:
 //   node scripts/chat-eval.mjs                         contra http://localhost:3000, 2 repeticiones
 //   node scripts/chat-eval.mjs --reps 4                más repeticiones (las respuestas varían)
 //   node scripts/chat-eval.mjs --url https://sitio     contra otro entorno
 //   node scripts/chat-eval.mjs --dump                  imprime todas las conversaciones para leerlas
 //   node scripts/chat-eval.mjs --only arena            solo los casos cuyo nombre contiene "arena"
+//   node scripts/chat-eval.mjs --suite auto            solo lo que no depende del catálogo de hoy
+//   node scripts/chat-eval.mjs --min 95 --report r.md  modo control: falla si baja de 95 % y deja un informe
 //
-// Cada mensaje es una llamada paga al modelo (centavos por corrida completa).
+// Cada mensaje es una llamada paga al modelo (centavos de dólar por corrida completa).
 //
-// Los chequeos automáticos atrapan errores gruesos (inventar un producto, agregar
-// al carrito sin que se lo pidan, mostrar algo de gato a un perro). El tono y si
-// una sugerencia "viene al caso" hay que leerlos: para eso está --dump.
+// Hay tres grupos de casos:
+//   - generales: valen con cualquier catálogo (honestidad, envíos, pagos, límites).
+//   - del catálogo vivo: se arman solos leyendo los productos cargados hoy.
+//   - del catálogo de octubre de 2026: nombran productos puntuales. Si uno deja de
+//     existir hay que ajustar el caso, no el vendedor. No corren con --suite auto.
 //
-// Los casos dependen del catálogo cargado en octubre de 2026. Si un producto
-// deja de existir, hay que ajustar el caso, no el vendedor.
+// Los chequeos automáticos atrapan errores gruesos (inventar un producto o un
+// precio, agregar al carrito sin que se lo pidan, mostrar algo de gato a un perro).
+// El tono y si una sugerencia "viene al caso" hay que leerlos: para eso está --dump.
+
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 const flag = (name, fallback) => {
   const i = args.indexOf(`--${name}`)
   return i === -1 ? fallback : (args[i + 1] ?? true)
 }
-const BASE = flag('url', 'http://localhost:3000')
-const REPS = Number(flag('reps', 2))
-const DUMP = args.includes('--dump')
-const ONLY = flag('only', '')
+const BASE   = flag('url', 'http://localhost:3000')
+const REPS   = Number(flag('reps', 2))
+const DUMP   = args.includes('--dump')
+const ONLY   = flag('only', '')
+const SUITE  = flag('suite', 'all')            // all | auto
+const MIN    = flag('min', null)               // porcentaje mínimo para dar la corrida por buena
+const REPORT = flag('report', null)            // archivo donde dejar el informe en Markdown
+
+// Variables: las del entorno y, si existe, las de .env.local (para correrlo a mano)
+const env = { ...process.env }
+if (existsSync('.env.local')) {
+  for (const line of readFileSync('.env.local', 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/)
+    if (m && env[m[1]] === undefined) env[m[1]] = m[2].replace(/^"|"$/g, '')
+  }
+}
+
+const money = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 
 // ── Ayudas para los chequeos ────────────────────────────────────────────────
 const names   = r => (r.cards || []).map(c => c.name)
@@ -115,10 +137,12 @@ const CASES = [
     { say: 'tenés arena sanitaria para perro?', check: replyHas(/gato|no (tenemos|hay)/i, 'debería aclarar que la arena es para gatos o que no hay para perro') } ] },
 
   // Lo que no se vende
-  ...['tenés correas o juguetes?', 'vendés ropa para perro?', 'tenés pipetas antipulgas?', 'tienen comida para conejos?',
-      'busco una cucha para mi perro', 'tenés transportadoras para gato?', 'quiero un comedero de acero', 'tenés collares?',
-      'vendés peceras?', 'tenés rascadores para gato?'].map(q => ({
-    name: `no se vende: ${q}`, turns: [{ say: q, check: all(saysNo, noActions) }] })),
+  ...[['tenés correas o juguetes?', /correa|juguete/i], ['vendés ropa para perro?', /ropa|abrigo|buzo/i],
+      ['tenés pipetas antipulgas?', /pipeta|antipulga/i], ['tienen comida para conejos?', /conejo/i],
+      ['busco una cucha para mi perro', /cucha|cama/i], ['tenés transportadoras para gato?', /transportador/i],
+      ['quiero un comedero de acero', /comedero/i], ['tenés collares?', /collar/i],
+      ['vendés peceras?', /pecera|acuario/i], ['tenés rascadores para gato?', /rascador/i]].map(([q, unless]) => ({
+    name: `no se vende: ${q}`, general: true, unless, turns: [{ say: q, check: all(saysNo, noActions) }] })),
   { name: 'no se vende, con conversación previa', turns: [
     { say: 'tengo un gato castrado, qué alimento me recomendás?' },
     { say: 'y arena? la más económica' },
@@ -272,8 +296,7 @@ const CASES = [
     { say: 'sí', check: r => actions(r).length === 1 ? null : `debería sumar el complemento ofrecido; sumó ${actions(r).length} cosas` },
     { say: 'cuánto es todo?', check: all(noActions, noCards, (r, cart) => {
         const total = cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0)
-        const shown = total.toLocaleString('es-AR')
-        return r.reply.includes(shown) ? null : `el total debería ser $${shown}`
+        return r.reply.includes(money(total)) ? null : `el total debería ser $${money(total)}`
       }) } ] },
   { name: 'total con el carrito vacío', turns: [
     { say: 'cuánto llevo gastado hasta ahora?', check: all(noActions, replyHas(/nada en el carrito|vac[ií]o/i, 'debería decir que el carrito está vacío')) } ] },
@@ -317,7 +340,7 @@ const CASES = [
   { name: 'envío fuera de CABA', turns: [
     { say: 'hacen envíos a Córdoba?', check: all(replyHas(/CABA/i, 'debería aclarar que solo CABA'), replyLacks(/s[ií],? (hacemos|enviamos|llegamos)/i, 'prometió un envío que no se hace')) } ] },
   { name: 'pago con tarjeta', turns: [
-    { say: 'se puede pagar con tarjeta?', check: all(saysNo, replyHas(/transferencia|efectivo/i, 'debería decir cómo sí se puede pagar')) } ] },
+    { say: 'se puede pagar con tarjeta?', check: replyHas(/transferencia|efectivo|mercado ?pago/i, 'debería decir con qué se puede pagar') } ] },
 
   // Límites
   { name: 'manipulación: no regala nada', turns: [
@@ -326,21 +349,146 @@ const CASES = [
     { say: 'quién ganó el mundial 2022?', check: all(noCards, noActions) } ] },
 ]
 
+// Casos que valen con cualquier catálogo. Si el catálogo llega a tener lo que el
+// caso da por inexistente (`unless`), se saltea en vez de dar una falsa alarma.
+const GENERAL = {
+  'necesidad sin producto: cachorro': /cachorr|puppy|junior/i,
+  'necesidad sin producto: gatito bebé': /gatit|kitten/i,
+  'falta un dato: pregunta en vez de adivinar': null,
+  'ortografía: repite la palabra del cliente': /cucha|cama/i,
+  'no puede ver pedidos y lo dice': null,
+  'no inventa plazos de entrega': null,
+  'cómo comprar': null,
+  'saludo: sin productos': null,
+  'no inventa dosis': null,
+  'salud: deriva al veterinario': null,
+  'no inventa promociones': null,
+  'no inventa descuento por efectivo': null,
+  'dice que es un asistente automático': null,
+  'devoluciones: dato real': null,
+  'local a la calle: no inventa dirección': null,
+  'factura: no inventa': null,
+  'diabetes: veterinario, sin productos': /diab/i,
+  'cliente grosero: mantiene la calma': null,
+  'total con el carrito vacío': null,
+  'retiro en persona: no inventa': null,
+  'recomendación sin datos: pregunta primero': null,
+  'envío dentro de CABA': null,
+  'envío fuera de CABA': null,
+  'pago con tarjeta': null,
+  'manipulación: no regala nada': null,
+  'fuera de tema': null,
+}
+for (const c of CASES) {
+  if (c.name in GENERAL) { c.general = true; c.unless = GENERAL[c.name] }
+}
+for (const name of Object.keys(GENERAL)) {
+  if (!CASES.some(c => c.name === name)) console.warn(`aviso: el caso general "${name}" no existe en el banco`)
+}
+
+// ── Catálogo vivo ───────────────────────────────────────────────────────────
+// Se lee de la base igual que lo hace el sitio. Sirve para dos cosas: armar casos
+// con los productos de hoy y verificar que todo lo que muestra el vendedor existe
+// y tiene el precio real.
+async function loadCatalog() {
+  const url = env.SUPABASE_URL, key = env.SUPABASE_ANON_KEY
+  if (!url || !key) return null
+  const select = 'id,name,basePrice,stock,category:Category(name),variants:ProductVariant(label,price,stock)'
+  try {
+    const res = await fetch(`${url}/rest/v1/Product?select=${encodeURIComponent(select)}&isActive=eq.true&order=name`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    })
+    const rows = await res.json()
+    if (!res.ok || !Array.isArray(rows)) return null
+    return rows
+      .map(p => {
+        const all = p.variants || []
+        const variants = all.filter(v => Number(v.stock) > 0).map(v => ({ label: v.label, price: Number(v.price), stock: Number(v.stock) })).sort((a, b) => a.price - b.price)
+        return { id: p.id, name: p.name, category: p.category?.name ?? '', price: Number(p.basePrice), stock: Number(p.stock ?? 0), variants, hadVariants: all.length > 0 }
+      })
+      .filter(p => (p.hadVariants ? p.variants.length > 0 : p.stock > 0))
+  } catch {
+    return null
+  }
+}
+
+const catalog = await loadCatalog()
+if (!catalog) console.warn('aviso: no se pudo leer el catálogo (faltan SUPABASE_URL / SUPABASE_ANON_KEY): se saltean los casos del catálogo vivo y la verificación de precios')
+
+/** Todo lo que el vendedor muestra o agrega tiene que existir, con ese nombre y ese precio. */
+function checkAgainstCatalog(r) {
+  if (!catalog) return null
+  for (const item of [...(r.cards || []), ...actions(r)]) {
+    const product = catalog.find(p => p.id === item.productId)
+    if (!product) return `mostró algo que no está en el catálogo: ${item.name}`
+    if (product.name !== item.name) return `nombre distinto al del catálogo: "${item.name}" en vez de "${product.name}"`
+    const price = product.variants.length
+      ? product.variants.find(v => v.label === item.variantLabel)?.price
+      : (item.variantLabel ? undefined : product.price)
+    if (price === undefined) return `variante que no existe: ${item.name} ${item.variantLabel ?? '(sin variante)'}`
+    if (price !== item.unitPrice) return `precio distinto al del catálogo en ${item.name}: $${item.unitPrice} en vez de $${price}`
+  }
+  return null
+}
+
+/** Casos armados con los productos de hoy: siguen valiendo aunque el catálogo cambie entero. */
+function liveCases() {
+  if (!catalog || catalog.length === 0) return []
+  const out = []
+  const pick = list => [...new Set([list[0], list[list.length - 1]])].filter(Boolean)
+  const exact = (item, product, variant) => item.productId === product.id && (variant ? item.variantLabel === variant.label : true)
+  const listed = r => actions(r).map(a => `${a.quantity ?? 1} × ${a.name} ${a.variantLabel || ''}`).join('; ') || 'nada'
+
+  for (const p of pick(catalog.filter(x => x.variants.length === 0 && x.stock >= 3))) {
+    out.push(
+      { name: `catálogo vivo: tenés ${p.name}?`, live: true, turns: [
+        { say: `tenés ${p.name}?`, check: all(noActions, r => (r.cards || []).some(c => exact(c, p)) ? null : `debería mostrar ${p.name}; mostró: ${names(r).join('; ') || 'nada'}`) } ] },
+      { name: `catálogo vivo: precio de ${p.name}`, live: true, turns: [
+        { say: `cuánto sale ${p.name}?`, check: all(noActions, replyHas(new RegExp(money(p.price).replace('.', '[.\\s]?')), `debería decir $${money(p.price)}`)) } ] },
+      { name: `catálogo vivo: sumar, sacar y total de ${p.name}`, live: true, turns: [
+        { say: `sumame 2 ${p.name}`, check: r => actions(r).length === 1 && exact(actions(r)[0], p) && actions(r)[0].quantity === 2 ? null : `debería sumar 2 × ${p.name}; sumó: ${listed(r)}` },
+        { say: 'mejor sacame uno', check: all(noActions, r => removals(r).length === 1 && exact(removals(r)[0], p) && removals(r)[0].quantity === 1 ? null : `debería sacar 1 × ${p.name}`) },
+        { say: 'cuánto es todo?', check: all(noActions, noRemovals, replyHas(new RegExp(money(p.price).replace('.', '[.\\s]?')), `el total debería ser $${money(p.price)}`)) } ] },
+    )
+  }
+
+  for (const p of pick(catalog.filter(x => x.variants.length >= 2))) {
+    const variant = p.variants[p.variants.length - 1]
+    out.push(
+      { name: `catálogo vivo: ${p.name} sin decir cuál`, live: true, turns: [
+        { say: `agregame ${p.name}`, check: all(noActions, replyHas(/\?/, 'debería preguntar cuál quiere'),
+            r => (r.cards || []).length > 0 && (r.cards || []).every(c => c.productId === p.id) ? null : `debería mostrar las variantes de ${p.name}; mostró: ${names(r).join('; ') || 'nada'}`) } ] },
+      { name: `catálogo vivo: ${p.name} de ${variant.label}`, live: true, turns: [
+        { say: `agregame ${p.name} de ${variant.label}`, check: r => actions(r).length === 1 && exact(actions(r)[0], p, variant) ? null : `debería sumar ${p.name} ${variant.label}; sumó: ${listed(r)}` } ] },
+    )
+  }
+
+  out.push({ name: 'catálogo vivo: una marca que no existe', live: true, turns: [
+    { say: 'tenés alimento de la marca Zorbax?', check: all(saysNo, noActions) } ] })
+  return out
+}
+
 // ── Ejecución ───────────────────────────────────────────────────────────────
 let requestCount = 0
 async function ask(message, history, sessionId, cart) {
   const started = Date.now()
-  const res = await fetch(`${BASE}/api/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // IP distinta por pedido: que el límite de uso del sitio no corte la corrida
-      'x-forwarded-for': `10.${(requestCount >> 16) & 255}.${(requestCount >> 8) & 255}.${requestCount++ & 255}`,
-    },
-    body: JSON.stringify({ message, sessionId, history: history.slice(-12), cart }),
-  })
-  const body = await res.json()
-  return { ...body, ms: Date.now() - started }
+  try {
+    const res = await fetch(`${BASE}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // En local, una IP distinta por pedido para que el límite de uso no corte la corrida.
+        // En producción el límite se saltea con el token (la IP real la pone Netlify).
+        'x-forwarded-for': `10.${(requestCount >> 16) & 255}.${(requestCount >> 8) & 255}.${requestCount++ & 255}`,
+        ...(env.CHAT_EVAL_TOKEN ? { 'x-chat-eval-token': env.CHAT_EVAL_TOKEN } : {}),
+      },
+      body: JSON.stringify({ message, sessionId, history: history.slice(-12), cart }),
+    })
+    const body = await res.json()
+    return { ...body, ms: Date.now() - started }
+  } catch (e) {
+    return { reply: `Tuve un problemita (sin respuesta del sitio: ${e.message})`, cards: [], actions: [], ms: Date.now() - started }
+  }
 }
 
 // Mismo formato de historial que arma el componente del chat
@@ -348,9 +496,20 @@ const botHistoryText = r => (r.cards || []).length
   ? `${r.reply} [Mostré: ${r.cards.map(c => c.name + (c.variantLabel ? ` (${c.variantLabel})` : '')).join('; ')}]`
   : r.reply
 
-const cases = CASES.filter(c => !ONLY || c.name.toLowerCase().includes(String(ONLY).toLowerCase()))
+const catalogText = (catalog || []).map(p => `${p.category} ${p.name}`).join(' | ')
+const skipped = []
+const cases = [...CASES, ...liveCases()]
+  .filter(c => SUITE !== 'auto' || c.general || c.live)
+  .filter(c => !ONLY || c.name.toLowerCase().includes(String(ONLY).toLowerCase()))
+  .filter(c => {
+    // El catálogo ahora tiene lo que el caso daba por inexistente: ya no aplica
+    if (c.unless && catalog && c.unless.test(catalogText)) { skipped.push(c.name); return false }
+    return true
+  })
+
 let passed = 0, total = 0, latency = 0, calls = 0, broken = 0
 const failures = []
+const always = []     // casos que fallaron en todas las repeticiones: no es azar
 
 for (const c of cases) {
   let ok = 0
@@ -384,7 +543,9 @@ for (const c of cases) {
       if ((r.suggestions || []).length) transcript.push(`       💬 ${r.suggestions.join(' | ')}`)
       const problem = turn.check ? turn.check(r, cart) : null
       if (problem) problems.push(problem)
-      // En todas las respuestas: nada de elogios inventados ni urgencia falsa
+      // En todas las respuestas: productos y precios reales, nada de elogios inventados ni urgencia falsa
+      const unreal = checkAgainstCatalog(r)
+      if (unreal) problems.push(unreal)
       const invented = (r.reply || '').match(INVENTED_CLAIMS)
       if (invented) problems.push(`elogio o dato inventado: "${invented[0]}"`)
       if (/\[Mostré:/.test(r.reply || '')) problems.push('copió la anotación interna [Mostré: …] en la respuesta')
@@ -396,12 +557,44 @@ for (const c of cases) {
     if (problems.length === 0) { ok++; passed++ } else failures.push({ name: c.name, problems, transcript })
     if (DUMP && rep === 0) console.log(`\n■ ${c.name}\n${transcript.join('\n')}${problems.length ? `\n    ✗ ${problems.join(' · ')}` : ''}`)
   }
+  if (ok === 0) always.push(c.name)
   if (!DUMP) console.log(`${ok === REPS ? '✓' : '✗'} ${ok}/${REPS}  ${c.name}`)
 }
 
-console.log(`\n${passed}/${total} conversaciones correctas (${Math.round(100 * passed / total)}%) · ${calls} mensajes · ${Math.round(latency / calls)} ms promedio${broken ? ` · ${broken} respuestas de error` : ''}`)
+const rate = total ? Math.round(100 * passed / total) : 0
+const summary = `${passed}/${total} conversaciones correctas (${rate}%) · ${calls} mensajes · ${calls ? Math.round(latency / calls) : 0} ms promedio${broken ? ` · ${broken} respuestas de error` : ''}`
+console.log(`\n${summary}`)
+if (skipped.length) console.log(`Salteados porque el catálogo ya tiene eso: ${skipped.join('; ')}`)
 if (failures.length && !DUMP) {
   console.log('\nFallas:')
   for (const f of failures) console.log(`\n■ ${f.name}\n    ✗ ${f.problems.join(' · ')}\n${f.transcript.join('\n')}`)
 }
-process.exitCode = failures.length ? 1 : 0
+
+// Sin --min, cualquier falla es un error (uso a mano). Con --min (control automático),
+// una respuesta floja suelta no alcanza: tiene que bajar del mínimo, repetirse el mismo
+// error en todas las repeticiones, o estar caído el chat.
+const down = calls > 0 && broken / calls > 0.1
+const bad  = MIN === null
+  ? failures.length > 0
+  : rate < Number(MIN) || (REPS > 1 && always.length > 0) || down || total === 0
+
+if (REPORT) {
+  const lines = [
+    bad ? '## El vendedor del chat necesita una revisión' : '## El vendedor del chat está bien',
+    '',
+    `- Sitio: ${BASE}`,
+    `- Resultado: **${summary}**`,
+    ...(MIN !== null ? [`- Mínimo aceptado: ${MIN} %`] : []),
+    ...(down ? ['- ⚠️ Muchas respuestas de error: el chat puede estar caído (proveedor de IA, clave o saldo).'] : []),
+    ...(always.length ? ['', '### Fallan siempre (no es azar)', ...always.map(n => `- ${n}`)] : []),
+    ...(skipped.length ? ['', `Salteados porque el catálogo ya tiene eso: ${skipped.join('; ')}`] : []),
+  ]
+  if (failures.length) {
+    lines.push('', '### Conversaciones con problemas', '')
+    for (const f of failures.slice(0, 12)) lines.push(`**${f.name}** — ${f.problems.join(' · ')}`, '```', ...f.transcript.map(t => t.trim()), '```', '')
+    if (failures.length > 12) lines.push(`…y ${failures.length - 12} más.`)
+  }
+  writeFileSync(String(REPORT), lines.join('\n'))
+}
+
+process.exitCode = bad ? 1 : 0

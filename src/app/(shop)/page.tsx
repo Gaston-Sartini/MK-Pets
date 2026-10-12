@@ -21,14 +21,14 @@ const BASE_URL = 'https://mk-pets.com.ar'
 export const metadata: Metadata = {
   title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
   description:
-    'Comprá alimentos para perros y gatos, snacks, productos de higiene y juguetes para mascotas. Envío gratis a CABA. La mejor tienda de mascotas online de Buenos Aires.',
+    'Comprá alimentos para perros y gatos, snacks y productos de higiene para mascotas. Envío gratis a CABA. La mejor tienda de mascotas online de Buenos Aires.',
   alternates: {
     canonical: BASE_URL,
   },
   openGraph: {
     title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
     description:
-      'Alimentos, snacks, higiene y juguetes para mascotas. Envío gratis a CABA.',
+      'Alimentos, snacks y productos de higiene para mascotas. Envío gratis a CABA.',
     url: BASE_URL,
   },
 }

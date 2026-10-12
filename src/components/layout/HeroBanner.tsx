@@ -40,7 +40,7 @@ export function HeroBanner() {
             </p>
 
             <p className="font-body text-mk-mid text-base md:text-lg mb-7 max-w-md mx-auto md:mx-0">
-              Alimentos, snacks, higiene, ropa y juguetes para perros y gatos
+              Alimentos, snacks y productos de higiene para perros y gatos
               con envío gratis a CABA.
             </p>
 

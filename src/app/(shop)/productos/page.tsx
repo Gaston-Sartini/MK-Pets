@@ -54,7 +54,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   return {
     title: 'Todos los productos para mascotas',
     description:
-      'Explorá nuestro catálogo completo de alimentos, snacks, higiene y juguetes para perros y gatos. Envío gratis a CABA.',
+      'Explorá nuestro catálogo completo de alimentos, snacks y productos de higiene para perros y gatos. Envío gratis a CABA.',
     alternates: {
       canonical: `${BASE_URL}/productos`,
     },

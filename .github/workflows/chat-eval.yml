@@ -1,0 +1,97 @@
+name: Control del vendedor
+
+# Conversa con el chat del sitio publicado y revisa que siga siendo honesto y
+# lógico (scripts/chat-eval.mjs). Corre solo:
+#   - después de cada publicación del sitio (cambios de código o de modelo),
+#   - todos los lunes (por si cambió el catálogo desde el panel),
+#   - a mano desde Actions → Control del vendedor → Run workflow.
+# Si algo anda mal abre un aviso (issue) con las conversaciones que fallaron;
+# cuando vuelve a pasar, lo cierra. Cada corrida cuesta centavos de dólar de IA.
+
+on:
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+  schedule:
+    - cron: '0 12 * * 1'      # lunes 9:00 de Argentina
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: chat-eval
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    name: Conversaciones de prueba
+    # Si el deploy falló no hay nada nuevo que medir
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE_URL: https://mk-pets.netlify.app
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # El token que saltea el límite de uso del chat vive en Netlify, como el resto
+      # de las variables del sitio: se lee de ahí para no tenerlo en dos lugares.
+      - name: Leer el token del control
+        run: |
+          TOKEN=$(npx --yes netlify-cli@26 env:get CHAT_EVAL_TOKEN --site "$NETLIFY_SITE_ID" | tail -n 1)
+          if [ -z "$TOKEN" ] || [ ${#TOKEN} -lt 24 ]; then
+            echo "::error::No se pudo leer CHAT_EVAL_TOKEN de Netlify"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "CHAT_EVAL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID:    ${{ secrets.NETLIFY_SITE_ID }}
+
+      - name: Conversar con el vendedor
+        id: eval
+        run: node scripts/chat-eval.mjs --url "$SITE_URL" --suite auto --reps 2 --min 95 --report informe.md
+        env:
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Resumen
+        if: always()
+        run: test -f informe.md && cat informe.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Avisar si anda mal
+        if: failure() && steps.eval.outcome == 'failure'
+        run: |
+          gh label create vendedor --color D93F0B --description "Avisos del control automático del chat" --force
+          {
+            cat informe.md
+            echo
+            echo "---"
+            echo "Corrida: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "Qué hacer: abrí Claude en la carpeta del proyecto y pedile que revise este aviso."
+            echo "cc @${GITHUB_REPOSITORY_OWNER}"
+          } > cuerpo.md
+          ABIERTO=$(gh issue list --label vendedor --state open --json number -q '.[0].number')
+          if [ -n "$ABIERTO" ]; then
+            gh issue comment "$ABIERTO" --body-file cuerpo.md
+          else
+            gh issue create --title "El vendedor del chat necesita una revisión" --label vendedor --body-file cuerpo.md
+          fi
+
+      - name: Cerrar el aviso si ya anda bien
+        if: success()
+        run: |
+          ABIERTO=$(gh issue list --label vendedor --state open --json number -q '.[0].number' || true)
+          if [ -n "$ABIERTO" ]; then
+            gh issue close "$ABIERTO" --comment "El control volvió a pasar: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
