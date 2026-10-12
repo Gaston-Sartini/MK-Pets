@@ -68,6 +68,12 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+      - name: Cerrar el aviso si volvió a andar
+        run: |
+          for N in $(gh issue list --repo "$GITHUB_REPOSITORY" --label copia --state open --json number -q '.[].number'); do
+            gh issue close "$N" --repo "$GITHUB_REPOSITORY" --comment "La copia volvió a hacerse bien: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          done
+
       - name: Avisar si falló
         if: failure()
         run: |
