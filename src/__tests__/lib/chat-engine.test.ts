@@ -379,6 +379,11 @@ describe('chat engine: armado de la respuesta', () => {
     expect(bye.cards).toEqual([])
     expect(bye.reply).toBe('¡Dale! Cuando quieras, entrá al carrito para terminar la compra.')
 
+    // Tampoco si el modelo dice "ya lo tenés en el carrito" y lo vuelve a mostrar
+    const again = buildResponse({ reply: '¡Dale! Ya lo tenés en el carrito.', products: [{ id: 'adultos', variant: '1 KG' }] }, catalog, ctx('No, gracias', [], cart))
+    expect(again.cards).toEqual([])
+    expect(again.reply).toBe('¡Dale! Cualquier cosa, acá estoy. Cuando quieras, entrá al carrito para terminar la compra.')
+
     // Al pedir otra cosa: no vuelve a sumar lo que ya tenía
     const more = buildResponse({ reply: 'Listo.', addToCart: [{ id: 'adultos', variant: '1 KG' }, { id: 'minino' }] }, catalog, ctx('agregame la arena minino y nada más', [], cart))
     expect(adds(more).map(a => a.productId)).toEqual(['minino'])

@@ -8,6 +8,8 @@ on:
       - 'docs/**'
       - 'infra/**'
       - '**/*.md'
+      - 'scripts/**'
+      - '.github/workflows/chat-eval.yml'
   workflow_dispatch:      # allow manual deploys from GitHub UI
 
 concurrency:

@@ -7,6 +7,7 @@
  *   - n8n (CHAT_ENGINE=n8n, o si no hay LLM_API_KEY): reenvía al webhook de n8n.
  *     Requiere tener n8n corriendo 24/7 y accesible desde internet.
  */
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 import { isNativeChatConfigured, runChat, sanitizeCart, sanitizeHistory } from '@/lib/chat/engine'
@@ -40,10 +41,26 @@ const FALLBACK = {
   suggestions: ['Ver ofertas', 'Algo para perro', 'Algo para gato'],
 }
 
+/**
+ * El control automático del vendedor (scripts/chat-eval.mjs) manda más de 100
+ * mensajes seguidos: se identifica con CHAT_EVAL_TOKEN para que no lo frene el
+ * límite de uso. El token solo sirve para eso.
+ */
+function isEvalRun(req: Request): boolean {
+  const expected = process.env.CHAT_EVAL_TOKEN
+  const given    = req.headers.get('x-chat-eval-token')
+  if (!expected || expected.length < 24 || !given) return false
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
 export async function POST(req: Request) {
   // Cada mensaje son 2 llamadas al modelo de IA: sin límite, un script puede
   // agotar la cuota (o la plata) de la API en minutos.
-  const rl = rateLimit(`chat:${getClientIp(req)}`, { limit: 30, windowMs: 5 * 60 * 1000 })
+  const rl = isEvalRun(req)
+    ? { allowed: true }
+    : rateLimit(`chat:${getClientIp(req)}`, { limit: 30, windowMs: 5 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { ...FALLBACK, reply: 'Uy, vamos muy rápido 😅 Esperá un minutito y seguimos.', suggestions: [] },

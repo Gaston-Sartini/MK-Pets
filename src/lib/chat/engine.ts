@@ -1113,6 +1113,13 @@ export function buildResponse(
     }
   }
 
+  // Se está despidiendo ("no, gracias"): ni tarjetas ni "te lo dejo acá abajo". El modelo a
+  // veces contesta "ya lo tenés en el carrito" y vuelve a mostrar lo que acaba de comprar.
+  if (guardEnabled && !intent && isClosing(context.message)) {
+    cards = []
+    if (CLAIMS_ADDED.test(reply)) reply = '¡Dale! Cualquier cosa, acá estoy.'
+  }
+
   if (allowed.length === 0 && blocked.length === 0 && CLAIMS_ADDED.test(reply)) {
     // Dice que agregó algo pero no llegó ningún producto válido (vino vacío, o con
     // un id que no existe). Si la persona nombró UN producto y lo pidió, es ese.

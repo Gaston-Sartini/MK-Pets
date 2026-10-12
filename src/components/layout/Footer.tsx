@@ -55,7 +55,7 @@ export async function Footer() {
               Tu mascota, nuestra prioridad 🐾
             </p>
             <p className="font-body text-white/60 text-sm leading-relaxed">
-              Alimentos, snacks, higiene, ropa y juguetes para tu compañero
+              Alimentos, snacks y productos de higiene para tu compañero
               con entrega a domicilio en CABA.
             </p>
           </div>
