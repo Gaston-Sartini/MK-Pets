@@ -3,15 +3,17 @@ import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { canModifyOrder } from '@/lib/utils'
 import { restoreStock, takeStock } from '@/lib/stock'
-import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { rateLimitShared, getClientIp } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
+import { notifyOwner } from '@/lib/whatsapp'
+import { formatPrice } from '@/lib/utils'
 
 export async function GET(
   request: Request,
   { params }: { params: { numero: string } }
 ) {
   // El número de pedido es la credencial para ver datos personales: frenamos el tanteo.
-  const rl = rateLimit(`order-get:${getClientIp(request)}`, { limit: 60, windowMs: 10 * 60 * 1000 })
+  const rl = await rateLimitShared(`order-get:${getClientIp(request)}`, { limit: 60, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Demasiadas solicitudes. Intentá en unos minutos.' }, { status: 429 })
   }
@@ -179,5 +181,68 @@ export async function PATCH(
     return NextResponse.json({ error: 'No se pudo modificar el pedido' }, { status: 500 })
   }
 
+  await notifyOwner(
+    `✏️ El cliente modificó el pedido ${params.numero}. Nuevo total: ${formatPrice(newTotal)}. Mirá las cantidades en el panel antes de prepararlo.`,
+    { orderNumber: params.numero, event: 'modified' },
+  )
+
   return NextResponse.json({ orderNumber: params.numero, total: newTotal })
+}
+
+/**
+ * El cliente cancela su propio pedido. Mismas condiciones que para modificarlo:
+ * dentro de los 30 minutos, sin pago acreditado y antes de que se empiece a preparar.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: { numero: string } }
+) {
+  const rl = await rateLimitShared(`order-cancel:${getClientIp(request)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Demasiadas solicitudes. Intentá en unos minutos.' }, { status: 429 })
+  }
+
+  const order = await prisma.order.findUnique({
+    where:  { orderNumber: params.numero },
+    select: {
+      id: true, status: true, paymentStatus: true, canModifyUntil: true, customerName: true, total: true,
+      items: { select: { productId: true, variantLabel: true, quantity: true } },
+    },
+  })
+  if (!order) return NextResponse.json({ error: 'Pedido no encontrado' }, { status: 404 })
+
+  if (order.status === 'CANCELLED') return NextResponse.json({ ok: true })
+
+  if (!canModifyOrder(order.canModifyUntil) || !['PENDING', 'CONFIRMED'].includes(order.status) || order.paymentStatus === 'APPROVED') {
+    return NextResponse.json(
+      { error: 'Este pedido ya no se puede cancelar desde acá. Escribinos por WhatsApp y lo vemos.' },
+      { status: 409 },
+    )
+  }
+
+  try {
+    const cancelled = await prisma.$transaction(async (tx) => {
+      // El estado va en el WHERE: si justo lo cambió el dueño, no se cancela ni se devuelve stock dos veces
+      const updated = await tx.order.updateMany({
+        where: { id: order.id, status: order.status },
+        data:  { status: 'CANCELLED' },
+      })
+      if (updated.count === 0) return false
+      await restoreStock(tx, order.items)
+      return true
+    })
+    if (!cancelled) {
+      return NextResponse.json({ error: 'El pedido cambió recién. Recargá la página.' }, { status: 409 })
+    }
+  } catch (err) {
+    logger.error('Error cancelling order', { error: err instanceof Error ? err.message : String(err) })
+    return NextResponse.json({ error: 'No se pudo cancelar el pedido' }, { status: 500 })
+  }
+
+  await notifyOwner(
+    `❌ ${order.customerName} canceló el pedido ${params.numero} (${formatPrice(Number(order.total))}). El stock ya volvió.`,
+    { orderNumber: params.numero, event: 'cancelled-by-customer' },
+  )
+
+  return NextResponse.json({ ok: true })
 }

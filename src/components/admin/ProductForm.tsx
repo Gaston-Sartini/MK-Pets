@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2, Save, Upload, Loader2, X } from 'lucide-react'
+import { useConfirm } from '@/components/admin/ConfirmDialog'
 
 interface Variant { label: string; price: string; originalPrice: string; stock: string }
 
@@ -49,6 +50,7 @@ function extractStoragePath(url: string): string | null {
 
 export default function ProductForm({ productId, initial }: Props) {
   const router = useRouter()
+  const { confirm, dialog } = useConfirm()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState<FormData>({
@@ -176,7 +178,12 @@ export default function ProductForm({ productId, initial }: Props) {
 
   const handleDelete = async () => {
     if (!productId) return
-    if (!confirm('¿Eliminar este producto? Esta acción no se puede deshacer.')) return
+    if (!(await confirm({
+      title: '¿Eliminar este producto?',
+      detail: 'Se borra con sus fotos y no se puede deshacer. Si tiene pedidos, conviene desactivarlo.',
+      confirmLabel: 'Sí, eliminar',
+      danger: true,
+    }))) return
 
     const res = await fetch(`/api/admin/productos/${productId}`, { method: 'DELETE' })
     if (res.ok) {
@@ -195,6 +202,7 @@ export default function ProductForm({ productId, initial }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {dialog}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{error}</div>
       )}

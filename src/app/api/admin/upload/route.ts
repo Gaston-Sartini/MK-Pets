@@ -26,6 +26,18 @@ function extFromFile(file: File): string {
   return file.name.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
 }
 
+/** ¿Los primeros bytes son los de un JPG, PNG, GIF, WebP o AVIF? */
+function looksLikeImage(b: Uint8Array): boolean {
+  const ascii = (from: number, text: string) => [...text].every((ch, i) => b[from + i] === ch.charCodeAt(0))
+  return (
+    (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) ||                       // JPG
+    (b[0] === 0x89 && ascii(1, 'PNG')) ||                                      // PNG
+    ascii(0, 'GIF8') ||                                                        // GIF
+    (ascii(0, 'RIFF') && ascii(8, 'WEBP')) ||                                  // WebP
+    (ascii(4, 'ftyp') && (ascii(8, 'avif') || ascii(8, 'avis')))               // AVIF
+  )
+}
+
 /** Upload a product image. Returns the public URL. */
 export async function POST(req: Request) {
   const auth = await requireAdmin()
@@ -49,6 +61,12 @@ export async function POST(req: Request) {
       { error: `Tipo no permitido: ${file.type || 'desconocido'}. Usá JPG, PNG, WebP, GIF o AVIF.` },
       { status: 415 },
     )
+  }
+
+  // El tipo que declara el navegador se puede falsear: se mira cómo empieza el archivo.
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+  if (!looksLikeImage(head)) {
+    return NextResponse.json({ error: 'El archivo no es una imagen válida.' }, { status: 415 })
   }
 
   if (file.size > MAX_BYTES) {

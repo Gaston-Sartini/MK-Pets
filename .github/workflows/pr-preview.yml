@@ -1,8 +1,10 @@
 name: PR Preview
 
+# Cada vista previa es un despliegue en Netlify y gasta créditos. Por eso ya no se
+# genera sola en cada pull request: solo cuando al PR se le pone la etiqueta "preview".
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [labeled]
 
 concurrency:
   group: preview-${{ github.event.pull_request.number }}
@@ -13,7 +15,7 @@ jobs:
     name: Deploy preview
     runs-on: ubuntu-latest
     # Los PR desde forks no reciben los secrets de Netlify: no hay nada que desplegar.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.label.name == 'preview' && github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - uses: actions/checkout@v4

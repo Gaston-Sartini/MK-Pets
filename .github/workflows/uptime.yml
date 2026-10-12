@@ -1,0 +1,80 @@
+name: Sitio en línea
+
+# Revisa cada 30 minutos que la tienda responda: la portada, el catálogo y el
+# chequeo interno de salud (que a su vez prueba la base de datos).
+# Si algo no responde, abre un aviso (issue); cuando vuelve, lo cierra solo.
+# No gasta créditos de Netlify más allá de tres visitas por corrida.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ¿Responde la tienda?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITE_URL: https://mk-pets.netlify.app
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Probar el sitio
+        id: probe
+        run: |
+          FALLAS=""
+          probar() {
+            # Tres intentos: una función "dormida" puede tardar en el primero
+            for i in 1 2 3; do
+              CODE=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 25 "$SITE_URL$1" || echo 000)
+              [ "$CODE" = "200" ] && return 0
+              sleep 10
+            done
+            FALLAS="$FALLAS\n- $1 respondió $CODE"
+            return 1
+          }
+          probar / || true
+          probar /productos || true
+          if probar /api/health; then
+            grep -q '"status":"ok"' /tmp/body || FALLAS="$FALLAS\n- /api/health responde, pero avisa un problema: $(head -c 300 /tmp/body)"
+          fi
+          if [ -n "$FALLAS" ]; then
+            printf '%b\n' "$FALLAS" > fallas.txt
+            cat fallas.txt
+            exit 1
+          fi
+          echo "Todo responde."
+
+      - name: Avisar si está caído
+        if: failure()
+        run: |
+          gh label create caida --repo "$GITHUB_REPOSITORY" --color B60205 --description "El sitio no responde" --force
+          ABIERTO=$(gh issue list --repo "$GITHUB_REPOSITORY" --label caida --state open --json number -q '.[0].number')
+          {
+            echo "La tienda no está respondiendo bien ($SITE_URL):"
+            cat fallas.txt 2>/dev/null || echo "- no se pudo completar el chequeo"
+            echo
+            echo "Corrida: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "Qué hacer: abrí Claude en la carpeta del proyecto y pedile que revise este aviso. cc @${GITHUB_REPOSITORY_OWNER}"
+          } > cuerpo.md
+          # Un solo aviso por caída: si ya hay uno abierto no se repite cada media hora
+          if [ -z "$ABIERTO" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "La tienda no responde" --label caida --body-file cuerpo.md
+          fi
+
+      - name: Cerrar el aviso cuando vuelve
+        if: success()
+        run: |
+          ABIERTO=$(gh issue list --repo "$GITHUB_REPOSITORY" --label caida --state open --json number -q '.[0].number' || true)
+          if [ -n "$ABIERTO" ]; then
+            gh issue close "$ABIERTO" --repo "$GITHUB_REPOSITORY" --comment "La tienda volvió a responder: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

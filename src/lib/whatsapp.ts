@@ -93,15 +93,14 @@ export function buildStatusMessage(update: CustomerUpdate, order: { orderNumber:
 }
 
 export function isWhatsAppConfigured(): boolean {
-  return Boolean(process.env.EVOLUTION_API_URL || process.env.N8N_ORDER_WEBHOOK_URL)
+  return Boolean(process.env.EVOLUTION_API_URL)
 }
 
 /**
  * Manda un texto por WhatsApp. Nunca lanza: un fallo de mensajería no puede
  * hacer fallar un pedido ni un cambio de estado.
  *
- * Usa Evolution API directo si está EVOLUTION_API_URL; si no, el webhook de n8n
- * (workflow infra/n8n/workflow-whatsapp-pedido.json, que solo reenvía el texto).
+ * Lo envía por Evolution API (EVOLUTION_API_URL).
  *
  * Hay que hacerle `await`: en serverless (Netlify/Vercel) la función se congela
  * apenas se devuelve la respuesta y un fetch "suelto" se pierde. El timeout
@@ -116,25 +115,9 @@ export async function sendWhatsApp(
   if (!isWhatsAppConfigured()) return false
 
   const number = normalizeArgPhone(rawPhone)
-  const direct = Boolean(process.env.EVOLUTION_API_URL)
-  const via    = direct ? 'evolution' : 'n8n'
+  const via = 'evolution'
 
   try {
-    if (!direct) {
-      const res = await fetch(process.env.N8N_ORDER_WEBHOOK_URL!, {
-        method:  'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // n8n valida este header para que nadie más pueda disparar mensajes
-          ...(process.env.N8N_WEBHOOK_SECRET && { 'x-mkpets-secret': process.env.N8N_WEBHOOK_SECRET }),
-        },
-        body:   JSON.stringify({ phone: number, message: text, image: opts.imageUrl ?? null }),
-        signal: AbortSignal.timeout(4000),
-      })
-      if (!res.ok) logger.error('WhatsApp rejected', { ...context, via, status: res.status })
-      return res.ok
-    }
-
     const evolution = (path: string, body: Record<string, unknown>, timeoutMs: number) => fetch(
       `${process.env.EVOLUTION_API_URL!.replace(/\/+$/, '')}/message/${path}/${encodeURIComponent(process.env.EVOLUTION_INSTANCE ?? 'mi-bot')}`,
       {
@@ -180,6 +163,17 @@ export function orderImageUrl(): string | null {
   if (process.env.WHATSAPP_ORDER_IMAGE_URL) return process.env.WHATSAPP_ORDER_IMAGE_URL
   const base = getBaseUrl()
   return base.startsWith('https://') ? `${base}/logo_resumen_compra.png` : null
+}
+
+/**
+ * Aviso a quien atiende la tienda (OWNER_WHATSAPP). Para lo que el dueño tiene que
+ * saber sin abrir el panel: el cliente cambió o canceló su pedido, queda poco stock.
+ * Nunca frena la operación que lo dispara: si falla, se registra y se sigue.
+ */
+export async function notifyOwner(text: string, context: Record<string, unknown> = {}): Promise<boolean> {
+  const owner = process.env.OWNER_WHATSAPP
+  if (!owner || !isWhatsAppConfigured()) return false
+  return sendWhatsApp(owner, text, { ...context, to: 'owner' }).catch(() => false)
 }
 
 /**

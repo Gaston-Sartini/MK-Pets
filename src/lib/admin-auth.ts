@@ -17,6 +17,17 @@ export function isAdminUser(user: Pick<User, 'app_metadata'> | null | undefined)
   return user?.app_metadata?.role === 'admin'
 }
 
+/**
+ * La sesión del panel va en una cookie que el JavaScript de la página no puede leer.
+ * Todo el ingreso pasa por el servidor (/api/admin/login), así que el navegador no
+ * la necesita; si alguna vez se colara código ajeno en la página, no podría robarla.
+ */
+export const SESSION_COOKIE = {
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure:   process.env.NODE_ENV === 'production',
+}
+
 /** Cliente de Supabase atado a la sesión (cookies) del request actual. */
 async function createSessionClient(): Promise<SupabaseClient> {
   const cookieStore = await cookies()
@@ -30,7 +41,7 @@ async function createSessionClient(): Promise<SupabaseClient> {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, { ...options, ...SESSION_COOKIE })
             )
           } catch {
             // Los Server Components no pueden escribir cookies; el middleware

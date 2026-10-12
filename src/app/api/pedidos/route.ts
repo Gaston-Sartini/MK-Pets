@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { generateOrderNumber } from '@/lib/utils'
-import { rateLimit, getClientIp } from '@/lib/rate-limit'
-import { notifyOrderWhatsApp } from '@/lib/whatsapp'
+import { rateLimitShared, getClientIp } from '@/lib/rate-limit'
+import { notifyOrderWhatsApp, notifyOwner } from '@/lib/whatsapp'
 import { logger } from '@/lib/logger'
 import { takeStock } from '@/lib/stock'
 import { enabledPaymentMethods } from '@/lib/shop'
@@ -22,6 +22,9 @@ const createOrderSchema = z.object({
   })).min(1).max(50),
 })
 
+// Con cuántas unidades (o menos) se avisa a la tienda
+const LOW_STOCK_NOTICE = 3
+
 class StockError extends Error {
   constructor(message: string) {
     super(message)
@@ -31,13 +34,13 @@ class StockError extends Error {
 
 export async function POST(request: Request) {
   // 10 orders per IP per 10 minutes — prevents order flooding
-  const rl = rateLimit(`order:${getClientIp(request)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
+  const rl = await rateLimitShared(`order:${getClientIp(request)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json(
       { error: 'Demasiadas solicitudes. Intentá en unos minutos.' },
       {
         status:  429,
-        headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) },
+        headers: { 'Retry-After': '600' },
       }
     )
   }
@@ -184,6 +187,22 @@ export async function POST(request: Request) {
         unitPrice:    i.unitPrice,
       })),
     })
+
+    // Lo que este pedido dejó con pocas unidades: la tienda se entera sin abrir el panel
+    const low = resolvedItems
+      .map(i => {
+        const key  = i.variantLabel ? `${i.productId}:${i.variantLabel}` : i.productId
+        const left = (stockMap.get(key) ?? 0) - i.quantity
+        return { name: `${nameMap.get(i.productId) ?? 'Producto'}${i.variantLabel ? ` (${i.variantLabel})` : ''}`, left }
+      })
+      .filter(i => i.left <= LOW_STOCK_NOTICE)
+    if (low.length > 0) {
+      await notifyOwner(
+        `⚠️ Poco stock después del pedido ${orderNumber}:\n` +
+          low.map(i => `• ${i.name}: ${i.left === 0 ? 'sin stock' : i.left === 1 ? 'queda 1' : `quedan ${i.left}`}`).join('\n'),
+        { orderNumber, event: 'low-stock' },
+      )
+    }
 
     return NextResponse.json({
       orderNumber: order.orderNumber,

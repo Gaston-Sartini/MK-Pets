@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BARRIOS_CABA } from '@/lib/barrios'
 
 /**
  * Acepta un celular o fijo argentino escrito como lo escribe la gente:
@@ -26,8 +27,14 @@ export const deliveryFormSchema = z.object({
 
   address: z
     .string()
-    .min(10,  'Ingresá una dirección completa con calle y número')
-    .max(200, 'La dirección es demasiado larga'),
+    .min(5,   'Ingresá una dirección completa con calle y número')
+    .regex(/\d/, 'Falta el número de la calle')
+    .max(150, 'La dirección es demasiado larga'),
+
+  // Solo se entrega en CABA: elegir el barrio evita pedidos desde otra zona
+  neighborhood: z
+    .string()
+    .refine(v => (BARRIOS_CABA as readonly string[]).includes(v), 'Elegí tu barrio. Por ahora entregamos solo en CABA'),
 
   phone: z
     .string()

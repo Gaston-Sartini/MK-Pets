@@ -1,7 +1,7 @@
 import { Navbar } from '@/components/layout/Navbar'
 import { CartDrawer } from '@/components/cart/CartDrawer'
 import { ToastContainer } from '@/components/ui/Toast'
-import ChatBridge from '@/components/chat/ChatBridge'
+import { VisitBeacon } from '@/components/layout/VisitBeacon'
 import MKPetsChat from '@/components/chat/MKPetsChat'
 import { getCategories } from '@/lib/queries'
 
@@ -32,10 +32,9 @@ export default async function ShopLayout({ children }: { children: React.ReactNo
         {children}
       </main>
 
-      {/* Chat: bridge expone window.MKPets (uso programático opcional);
-          MKPetsChat es el chat propio que llama a /api/chat → n8n. */}
-      <ChatBridge />
+      {/* El vendedor del chat (llama a /api/chat) y el contador de visitas del panel */}
       <MKPetsChat />
+      <VisitBeacon />
     </>
   )
 }

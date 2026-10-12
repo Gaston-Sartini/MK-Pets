@@ -2,10 +2,6 @@
 
 const isDev = process.env.NODE_ENV !== 'production'
 
-// Extra origins that need to be allowed through CSP. These come from env vars
-// because they vary per deployment (self-hosted Typebot can live anywhere).
-const typebotOrigin = process.env.NEXT_PUBLIC_TYPEBOT_URL || ''
-
 // In dev, Next.js needs 'unsafe-eval' for HMR and ws: for the dev websocket.
 // In prod we keep a strict CSP.
 const scriptSrcParts = [
@@ -13,20 +9,15 @@ const scriptSrcParts = [
   "'unsafe-inline'",
   ...(isDev ? ["'unsafe-eval'"] : []),
   'https://sdk.mercadopago.com',
-  'https://cdn.jsdelivr.net',         // Typebot embed JS lives here
-  ...(typebotOrigin ? [typebotOrigin] : []),
 ]
 const connectSrcParts = [
   "'self'",
   ...(isDev ? ['ws:', 'http://localhost:*'] : []),
   'https://api.mercadopago.com',
-  'https://cdn.jsdelivr.net',
-  ...(typebotOrigin ? [typebotOrigin] : []),
 ]
 const frameSrcParts = [
   'https://www.mercadopago.com',
   'https://www.mercadopago.com.ar',
-  ...(typebotOrigin ? [typebotOrigin] : []),
 ]
 
 const scriptSrc  = `script-src ${scriptSrcParts.join(' ')}`

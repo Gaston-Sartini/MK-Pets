@@ -1,6 +1,11 @@
 import { supabase } from './supabase'
 import { prisma } from './prisma'
 import type { Product } from '@/types'
+import { searchItems } from './search'
+
+// Hasta cuántos productos se revisan al buscar, y cuántos resultados se muestran
+const SEARCH_POOL    = 500
+const SEARCH_RESULTS = 60
 
 // Supabase select for product cards (no description)
 const PRODUCT_CARD_SELECT =
@@ -95,6 +100,27 @@ export async function getProducts(opts: {
     categoryId = cat.id
   }
 
+  // Con búsqueda se trae el catálogo activo y se filtra en memoria (ver search.ts):
+  // así se mira nombre, categoría y descripción, con sinónimos y errores de tipeo.
+  if (search) {
+    let all = supabase
+      .from('Product')
+      .select(PRODUCT_DETAIL_SELECT)
+      .eq('isActive', true)
+      .order('isFeatured', { ascending: false })
+      .order('createdAt', { ascending: false })
+      .limit(SEARCH_POOL)
+    if (categoryId) all = all.eq('categoryId', categoryId)
+
+    const { data, error } = await all
+    if (error) throw new Error(error.message)
+    const found = searchItems(
+      search,
+      ((data ?? []) as any[]).map(p => ({ ...p, name: p.name as string, category: p.category?.name ?? '', description: p.description ?? '' })),
+    )
+    return { products: found.slice(0, SEARCH_RESULTS).map(p => serializeProduct({ ...p, category: (data as any[]).find(d => d.id === p.id)?.category })), nextCursor: null }
+  }
+
   // eslint-disable-next-line prefer-const
   let query = supabase
     .from('Product')
@@ -105,7 +131,6 @@ export async function getProducts(opts: {
     .limit(take + 1)
 
   if (categoryId) query = query.eq('categoryId', categoryId)
-  if (search)     query = query.ilike('name', `%${search}%`)
 
   if (cursor) {
     const { data: pivot } = await supabase
