@@ -11,7 +11,7 @@ import { formatPrice } from '@/lib/utils'
 import type { Metadata } from 'next'
 import type { Product } from '@/types'
 
-interface PageProps { params: { slug: string } }
+interface PageProps { params: Promise<{ slug: string }> }
 
 const BASE_URL = SITE_URL
 
@@ -26,7 +26,8 @@ export async function generateStaticParams() {
   }
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata(props: PageProps): Promise<Metadata> {
+  const params = await props.params
   const p = await getProductBySlug(params.slug)
   if (!p) notFound()
 
@@ -74,7 +75,8 @@ const BADGE_LABEL: Record<string, string> = {
   new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO',
 }
 
-export default async function ProductoPage({ params }: PageProps) {
+export default async function ProductoPage(props: PageProps) {
+  const params = await props.params
   const product = await getProductBySlug(params.slug)
   const related: Product[] = product
     ? await getRelatedProducts(product.category.id, product.id)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { PawPrint } from 'lucide-react'
 
@@ -101,7 +102,7 @@ export default function AdminLoginPage() {
         </form>
 
         <p className="mt-6 text-center text-xs text-mk-mid">
-          <a href="/" className="hover:text-mk-orange transition-colors">← Volver a la tienda</a>
+          <Link href="/" className="hover:text-mk-orange transition-colors">← Volver a la tienda</Link>
         </p>
       </div>
     </div>

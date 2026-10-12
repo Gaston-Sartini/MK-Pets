@@ -47,7 +47,7 @@ npm run dev
 Esperá hasta ver algo así:
 
 ```
-▲ Next.js 14.2.18
+▲ Next.js 15.5.27
 - Local:  http://localhost:3000
 ✓ Ready in 2s
 ```

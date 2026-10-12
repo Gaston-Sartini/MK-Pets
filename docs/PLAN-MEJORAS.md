@@ -52,7 +52,7 @@ Estado: ⬜ pendiente · ✅ hecho y publicado (12/10/2026) · ⏸ espera un dat
 
 | | Mejora |
 |---|---|
-| ⬜ | Que la portada no "salte" al cargar en el celular (en local no salta; falta volver a medir en producción) |
+| ✅ | Que la portada no "salte" al cargar en el celular. La foto principal no reservaba su lugar: medía 20 px hasta cargar y después empujaba todo el texto 230 px. Ahora ocupa su tamaño desde el primer momento |
 | ✅ | Imagen de vista previa al compartir más liviana |
 | ✅ | Nombres para los botones que solo tienen ícono |
 | ✅ | Medición de visitas propia, sin cookies ni servicios externos |
@@ -77,7 +77,9 @@ Estado: ⬜ pendiente · ✅ hecho y publicado (12/10/2026) · ⏸ espera un dat
 
 | | Mejora |
 |---|---|
-| ⬜ | Pasar de Next.js 14 a una versión con soporte |
+| ✅ | Pasar de Next.js 14 a una versión con soporte: quedó en Next.js 15.5 con React 19. Se probó entero en local antes de publicar: todas las páginas, un pedido completo (crear, modificar, cancelar), el panel (estados, pago, alta/edición/baja de producto) y el chat |
+
+Quedan avisos de seguridad solo en herramientas que no se publican con el sitio (las de pruebas y la de Prisma para armar la base). No afectan a la tienda; se actualizan cuando haga falta tocar esas herramientas.
 
 ## Cómo quedó cada cosa, en una línea
 

@@ -8,10 +8,8 @@ import { logger } from '@/lib/logger'
 import { notifyOwner } from '@/lib/whatsapp'
 import { formatPrice } from '@/lib/utils'
 
-export async function GET(
-  request: Request,
-  { params }: { params: { numero: string } }
-) {
+export async function GET(request: Request, props: { params: Promise<{ numero: string }> }) {
+  const params = await props.params
   // El número de pedido es la credencial para ver datos personales: frenamos el tanteo.
   const rl = await rateLimitShared(`order-get:${getClientIp(request)}`, { limit: 60, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
@@ -69,10 +67,8 @@ const modifySchema = z.object({
   })).min(1).max(50),
 })
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { numero: string } }
-) {
+export async function PATCH(request: Request, props: { params: Promise<{ numero: string }> }) {
+  const params = await props.params
   const order = await prisma.order.findUnique({
     where:  { orderNumber: params.numero },
     select: {
@@ -193,10 +189,8 @@ export async function PATCH(
  * El cliente cancela su propio pedido. Mismas condiciones que para modificarlo:
  * dentro de los 30 minutos, sin pago acreditado y antes de que se empiece a preparar.
  */
-export async function DELETE(
-  request: Request,
-  { params }: { params: { numero: string } }
-) {
+export async function DELETE(request: Request, props: { params: Promise<{ numero: string }> }) {
+  const params = await props.params
   const rl = await rateLimitShared(`order-cancel:${getClientIp(request)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Demasiadas solicitudes. Intentá en unos minutos.' }, { status: 429 })

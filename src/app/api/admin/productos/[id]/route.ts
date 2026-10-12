@@ -9,7 +9,8 @@ function revalidatePublicShop() {
   revalidatePath('/', 'layout')
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const auth = await requireAdmin()
   if (auth.error) return auth.error
   const { supabase } = auth
@@ -57,7 +58,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   return NextResponse.json({ ok: true })
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params
   const auth = await requireAdmin()
   if (auth.error) return auth.error
   const { supabase } = auth

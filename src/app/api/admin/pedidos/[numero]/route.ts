@@ -23,7 +23,8 @@ const NOTIFY_ON_STATUS: Partial<Record<string, CustomerUpdate>> = {
  * Cambia el estado del pedido (`status`) o marca el pago como recibido / pendiente
  * (`paymentStatus`). Marcar el pago como recibido confirma un pedido pendiente.
  */
-export async function PUT(req: Request, { params }: { params: { numero: string } }) {
+export async function PUT(req: Request, props: { params: Promise<{ numero: string }> }) {
+  const params = await props.params
   const auth = await requireAdmin()
   if (auth.error) return auth.error
 
