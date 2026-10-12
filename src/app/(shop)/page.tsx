@@ -12,12 +12,12 @@ import {
   getProductsByCategory,
   getCategories,
 } from '@/lib/queries'
-import { describeCatalog, describeCatalogTitle } from '@/lib/shop'
+import { SITE_URL, describeCatalog, describeCatalogTitle } from '@/lib/shop'
 
 // Cache home page for 5 minutes — balances freshness vs. DB load
 export const revalidate = 300
 
-const BASE_URL = 'https://mk-pets.com.ar'
+const BASE_URL = SITE_URL
 
 // La descripción nombra los rubros que hoy tienen productos: no promete lo que no se vende.
 export async function generateMetadata(): Promise<Metadata> {

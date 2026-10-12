@@ -77,6 +77,7 @@ const config = {
   },
 
   compress: true,
+  poweredByHeader: false,
   productionBrowserSourceMaps: false,
 
   experimental: {

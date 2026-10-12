@@ -1,5 +1,23 @@
 import { z } from 'zod'
 
+/**
+ * Acepta un celular o fijo argentino escrito como lo escribe la gente:
+ * "11 2345 6789", "011 15 2345-6789", "+54 9 11 2345-6789", "(11) 2345 6789".
+ * Lo que importa es que, sacando prefijos, queden código de área + número (10 dígitos).
+ */
+export function isArgPhone(value: string): boolean {
+  if (!/^[\d\s()+.\-]+$/.test(value)) return false
+  let digits = value.replace(/\D/g, '')
+  if (digits.startsWith('54')) digits = digits.slice(2)
+  if (digits.startsWith('9') && digits.length === 11) digits = digits.slice(1)
+  if (digits.startsWith('0')) digits = digits.slice(1)
+  // "11 15 2345 6789": el 15 después del código de área sobra
+  for (const area of [2, 3, 4]) {
+    if (digits.length === 12 && digits.slice(area, area + 2) === '15') { digits = digits.slice(0, area) + digits.slice(area + 2); break }
+  }
+  return digits.length === 10
+}
+
 export const deliveryFormSchema = z.object({
   customerName: z
     .string()
@@ -13,11 +31,8 @@ export const deliveryFormSchema = z.object({
 
   phone: z
     .string()
-    .regex(
-      /^(\+?54)?[\s-]?(11|15|\d{2,4})[\s-]?\d{4}[\s-]?\d{4}$/,
-      'Ingresá un teléfono válido (ej: 11 6669 8395)'
-    )
-    .transform(v => v.replace(/[\s\-\+]/g, '')),
+    .refine(isArgPhone, 'Ingresá un teléfono válido con código de área (ej: 11 2345 6789)')
+    .transform(v => v.replace(/\D/g, '')),
 
   notes: z
     .string()

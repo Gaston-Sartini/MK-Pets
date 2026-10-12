@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger'
 import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/lib/admin-auth'
@@ -61,6 +62,9 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (auth.error) return auth.error
   const { supabase } = auth
 
+  // Se anotan las fotos antes de borrar, para no dejarlas huérfanas en el almacenamiento.
+  const { data: existing } = await supabase.from('Product').select('images').eq('id', params.id).maybeSingle()
+
   // Las variantes se borran solas (ON DELETE CASCADE).
   const { error } = await supabase.from('Product').delete().eq('id', params.id)
 
@@ -73,6 +77,17 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
       )
     }
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Las fotos subidas desde el panel viven en el bucket "products". Si falla el borrado
+  // no es grave (el producto ya no existe): queda un archivo suelto, nada más.
+  const marker = '/storage/v1/object/public/products/'
+  const paths = ((existing?.images ?? []) as string[])
+    .filter(url => typeof url === 'string' && url.includes(marker))
+    .map(url => decodeURIComponent(url.split(marker)[1]))
+  if (paths.length > 0) {
+    const { error: storageError } = await supabase.storage.from('products').remove(paths)
+    if (storageError) logger.warn('No se pudieron borrar las fotos del producto', { error: storageError.message })
   }
 
   revalidatePublicShop()

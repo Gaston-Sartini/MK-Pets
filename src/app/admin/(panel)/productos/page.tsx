@@ -14,6 +14,12 @@ const BADGE_COLOR: Record<string, string> = {
   hot:  'bg-mk-navy text-white',
 }
 
+function stockLines(p: { stock: number; variants?: { label: string; stock: number }[] | null }) {
+  return p.variants?.length
+    ? p.variants.map(v => ({ label: v.label, stock: v.stock }))
+    : [{ label: '', stock: p.stock }]
+}
+
 export default async function AdminProductosPage() {
   // RLS solo deja ver productos inactivos y pedidos con la sesión del admin
   const supabase = await getAdminClient()
@@ -21,7 +27,7 @@ export default async function AdminProductosPage() {
 
   const { data: products } = await supabase
     .from('Product')
-    .select('id, name, slug, images, basePrice, stock, isActive, isFeatured, badge, category:Category(name, emoji)')
+    .select('id, name, slug, images, basePrice, stock, isActive, isFeatured, badge, category:Category(name, emoji), variants:ProductVariant(label, stock)')
     .order('createdAt', { ascending: false })
 
   return (
@@ -81,13 +87,18 @@ export default async function AdminProductosPage() {
                   {formatPrice(p.basePrice)}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`font-medium px-2 py-0.5 rounded-full text-xs ${
-                    p.stock === 0 ? 'bg-red-100 text-red-700'
-                    : p.stock <= 5 ? 'bg-orange-100 text-orange-700'
-                    : 'bg-green-100 text-green-700'
-                  }`}>
-                    {p.stock}
-                  </span>
+                  {/* Con variantes, el stock que vale es el de cada variante */}
+                  <div className="flex flex-wrap gap-1">
+                    {stockLines(p).map(line => (
+                      <span key={line.label} className={`font-medium px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${
+                        line.stock === 0 ? 'bg-red-100 text-red-700'
+                        : line.stock <= 5 ? 'bg-orange-100 text-orange-700'
+                        : 'bg-green-100 text-green-700'
+                      }`}>
+                        {line.label ? `${line.label}: ${line.stock}` : line.stock}
+                      </span>
+                    ))}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   {p.isActive
