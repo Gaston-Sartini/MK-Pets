@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useCartStore } from '@/store/cart-store'
 import { useToastStore } from '@/store/toast-store'
 import { cn } from '@/lib/utils'
-import type { ChatCard, ChatResponse, ChatAction } from '@/lib/chat-types'
+import type { ChatCard, ChatResponse } from '@/lib/chat-types'
 
 type ChatMessage =
   | { id: string; from: 'user';   text: string }
@@ -134,8 +134,15 @@ export default function MKPetsChat() {
     // para que el vendedor recuerde de qué veníamos hablando.
     const history = messages
       .filter((m) => m.from !== 'system' && m.id !== 'welcome' && m.text)
-      .slice(-8)
-      .map((m) => ({ role: m.from === 'user' ? 'user' : 'assistant', text: m.text }))
+      .slice(-12)
+      .map((m) => ({
+        role: m.from === 'user' ? 'user' : 'assistant',
+        // Junto al texto van las tarjetas que la persona vio, para que el vendedor
+        // entienda "el segundo", "ese" o "el de 3 kilos".
+        text: m.from === 'bot' && m.cards?.length
+          ? `${m.text} [Mostré: ${m.cards.map((c) => c.name + (c.variantLabel ? ` (${c.variantLabel})` : '')).join('; ')}]`
+          : m.text,
+      }))
 
     setMessages((prev) => [...prev, userMsg])
 
@@ -143,7 +150,13 @@ export default function MKPetsChat() {
       const r = await fetch('/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ message: text, sessionId, history }),
+        body:    JSON.stringify({
+          message: text,
+          sessionId,
+          history,
+          // Qué lleva en el carrito: para no ofrecerle lo que ya tiene y cerrar bien la venta
+          cart: useCartStore.getState().items.map((i) => ({ productId: i.productId, name: i.name, variantLabel: i.variantLabel ?? null, quantity: i.quantity })),
+        }),
       })
       const data: ChatResponse = await r.json()
 
@@ -154,19 +167,34 @@ export default function MKPetsChat() {
       if (Array.isArray(data.actions)) {
         for (const action of data.actions) {
           if (action.type === 'addToCart') {
-            addItem({
-              productId:    action.productId,
-              name:         action.name,
-              image:        action.image || '',
-              slug:         action.slug,
-              variantLabel: action.variantLabel ?? undefined,
-              unitPrice:    action.unitPrice,
-            })
-            addToast({ message: `✓ ${action.name} agregado 🐾`, type: 'success' })
+            // El carrito suma de a una unidad por llamada
+            const quantity = Math.max(1, Math.min(20, Math.round(action.quantity ?? 1)))
+            for (let n = 0; n < quantity; n++) {
+              addItem({
+                productId:    action.productId,
+                name:         action.name,
+                image:        action.image || '',
+                slug:         action.slug,
+                variantLabel: action.variantLabel ?? undefined,
+                unitPrice:    action.unitPrice,
+              })
+            }
+            addToast({ message: `✓ ${quantity > 1 ? `${quantity} × ` : ''}${action.name} agregado 🐾`, type: 'success' })
+          } else if (action.type === 'removeFromCart') {
+            // Mismo id que arma el carrito: productId + variante
+            const itemId = `${action.productId}${action.variantLabel ? `-${action.variantLabel}` : ''}`
+            const item = useCartStore.getState().items.find((i) => i.id === itemId)
+            if (!item) continue
+            if (action.quantity && action.quantity < item.quantity) {
+              useCartStore.getState().updateQuantity(itemId, item.quantity - action.quantity)
+            } else {
+              useCartStore.getState().removeItem(itemId)
+            }
+            addToast({ message: `${action.name} quitado del carrito`, type: 'success' })
           }
         }
-        // Si hubo al menos una addToCart, abrimos el drawer para que vea el resultado
-        if (data.actions.some((a: ChatAction) => a.type === 'addToCart')) {
+        // Si cambió el carrito, abrimos el drawer para que vea el resultado
+        if (data.actions.length > 0) {
           openDrawer()
         }
       }
@@ -272,7 +300,8 @@ export default function MKPetsChat() {
                 key={m.id}
                 message={m}
                 onAdd={handleAddToCart}
-                onSuggest={send}
+                // "Ir al carrito" abre el carrito directamente: no hace falta preguntarle al vendedor
+                onSuggest={(text) => (/^\s*(ir|ver|abrir)\s+(al\s+|el\s+|mi\s+)?carrito\s*$/i.test(text) ? openDrawer() : send(text))}
               />
             ))}
             {sending && (

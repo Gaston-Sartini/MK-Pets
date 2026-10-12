@@ -9,7 +9,7 @@
  */
 import { NextResponse } from 'next/server'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
-import { isNativeChatConfigured, runChat, sanitizeHistory } from '@/lib/chat/engine'
+import { isNativeChatConfigured, runChat, sanitizeCart, sanitizeHistory } from '@/lib/chat/engine'
 import { logger } from '@/lib/logger'
 
 export const runtime = 'nodejs'
@@ -31,6 +31,7 @@ interface ChatRequestBody {
   message?:   string
   sessionId?: string
   history?:   unknown
+  cart?:      unknown
 }
 
 const FALLBACK = {
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
 
   if (process.env.CHAT_ENGINE !== 'n8n' && isNativeChatConfigured()) {
     try {
-      return NextResponse.json(await runChat(message, sanitizeHistory(body.history)))
+      return NextResponse.json(await runChat(message, sanitizeHistory(body.history), sanitizeCart(body.cart)))
     } catch (e) {
       logger.error('chat engine failed', { error: e instanceof Error ? e.message : String(e) })
       return NextResponse.json(FALLBACK, { status: 200 })

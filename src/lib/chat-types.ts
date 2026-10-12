@@ -36,9 +36,21 @@ export interface ChatActionAddToCart {
   slug:         string
   unitPrice:    number
   variantLabel?: string | null
+  /** Unidades a sumar. Si falta, 1. */
+  quantity?:    number
 }
 
-export type ChatAction = ChatActionAddToCart
+/** El cliente pidió sacar algo del carrito ("sacame el whiskas", "mejor cambialo por el grande"). */
+export interface ChatActionRemoveFromCart {
+  type:         'removeFromCart'
+  productId:    string
+  name:         string
+  variantLabel?: string | null
+  /** Unidades a sacar. Si falta, se saca la línea entera. */
+  quantity?:    number
+}
+
+export type ChatAction = ChatActionAddToCart | ChatActionRemoveFromCart
 
 export interface ChatResponse {
   reply:        string
