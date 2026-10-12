@@ -1,11 +1,6 @@
 /**
  * /api/chat — el chat "vendedor" de la tienda.
- *
- * Dos motores posibles:
- *   - nativo (default si hay LLM_API_KEY): src/lib/chat/engine.ts llama al modelo
- *     directo desde el sitio. No necesita ningún servidor aparte.
- *   - n8n (CHAT_ENGINE=n8n, o si no hay LLM_API_KEY): reenvía al webhook de n8n.
- *     Requiere tener n8n corriendo 24/7 y accesible desde internet.
+ * El motor (src/lib/chat/engine.ts) llama al modelo de IA directo desde el sitio.
  */
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
@@ -14,17 +9,6 @@ import { isNativeChatConfigured, runChat, sanitizeCart, sanitizeHistory } from '
 import { logger } from '@/lib/logger'
 
 export const runtime = 'nodejs'
-
-// CHAT_VERSION: 'v1' | 'v2' | 'v3' (Gemini OpenAI-compat)
-// Default: v2. Cambiar CHAT_VERSION en .env para elegir versión.
-const CHAT_VERSION = process.env.CHAT_VERSION || process.env.NEXT_PUBLIC_CHAT_VERSION || 'v2'
-
-const VERSION_SUFFIX: Record<string, string> = { v1: '', v2: '-v2', v3: '-v3' }
-const suffix = VERSION_SUFFIX[CHAT_VERSION] ?? '-v2'
-
-const N8N_WEBHOOK_URL =
-  process.env.N8N_WEBHOOK_URL ||
-  `http://localhost:5678/webhook/mk-pets-chat${suffix}`
 
 const MAX_MESSAGE_CHARS = 500
 
@@ -87,41 +71,13 @@ export async function POST(req: Request) {
     )
   }
 
-  if (process.env.CHAT_ENGINE !== 'n8n' && isNativeChatConfigured()) {
-    try {
-      return NextResponse.json(await runChat(message, sanitizeHistory(body.history), sanitizeCart(body.cart)))
-    } catch (e) {
-      logger.error('chat engine failed', { error: e instanceof Error ? e.message : String(e) })
-      return NextResponse.json(FALLBACK, { status: 200 })
-    }
-  }
+  // Sin modelo configurado no hay vendedor: se responde con un mensaje amable, no con un error.
+  if (!isNativeChatConfigured()) return NextResponse.json(FALLBACK, { status: 200 })
 
-  const ctrl    = new AbortController()
-  const timer   = setTimeout(() => ctrl.abort(), 15_000)
   try {
-    const r = await fetch(N8N_WEBHOOK_URL, {
-      method:  'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.N8N_WEBHOOK_SECRET && { 'x-mkpets-secret': process.env.N8N_WEBHOOK_SECRET }),
-      },
-      body:    JSON.stringify({ message, sessionId }),
-      signal:  ctrl.signal,
-      cache:   'no-store',
-    })
-    clearTimeout(timer)
-    if (!r.ok) {
-      console.error('[api/chat] n8n returned', r.status)
-      return NextResponse.json(FALLBACK, { status: 200 })
-    }
-    const data = await r.json().catch(() => null)
-    if (!data || typeof data !== 'object') {
-      return NextResponse.json(FALLBACK, { status: 200 })
-    }
-    return NextResponse.json(data, { status: 200 })
+    return NextResponse.json(await runChat(message, sanitizeHistory(body.history), sanitizeCart(body.cart)))
   } catch (e) {
-    clearTimeout(timer)
-    console.error('[api/chat] fetch failed:', e instanceof Error ? e.message : e)
+    logger.error('chat engine failed', { error: e instanceof Error ? e.message : String(e) })
     return NextResponse.json(FALLBACK, { status: 200 })
   }
 }

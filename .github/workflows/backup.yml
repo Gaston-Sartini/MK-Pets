@@ -1,0 +1,78 @@
+name: Copia de seguridad
+
+# Copia semanal de la base (productos, categorías, pedidos y clientes).
+#   - Corre sola todos los domingos, y a mano desde Actions → Copia de seguridad.
+#   - El archivo queda guardado 90 días en la corrida, CIFRADO: tiene datos de
+#     clientes y este repositorio es público, así que sin la clave no se puede leer.
+#   - La clave es BACKUP_PASSPHRASE (secret de este repositorio; hay una copia en
+#     el .env.local del proyecto). Sin esa clave la copia no sirve: no perderla.
+#   - Cómo restaurar: docs/COPIAS-DE-SEGURIDAD.md
+#
+# Si la copia falla, se abre un aviso (issue).
+
+on:
+  schedule:
+    - cron: '0 7 * * 0'      # domingos 4:00 de Argentina
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  backup:
+    name: Copiar la base
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Volcar y cifrar
+        env:
+          DIRECT_URL:        ${{ secrets.DIRECT_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BACKUP_PASSPHRASE:-}" ] || [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::Faltan los secrets DIRECT_URL o BACKUP_PASSPHRASE"
+            exit 1
+          fi
+          FECHA=$(date -u +%Y-%m-%d)
+          # pg_dump no entiende los parámetros propios de Prisma (?pgbouncer=…)
+          URL="${DIRECT_URL%%\?*}"
+          # Se usa el pg_dump de la imagen oficial: tiene que ser igual o más nuevo que el servidor
+          docker run --rm -e PGURL="$URL" postgres:17 \
+            sh -c 'pg_dump "$PGURL" --schema=public --no-owner --no-privileges --format=plain' \
+            | gzip -9 > "mk-pets-$FECHA.sql.gz"
+          # Una copia vacía es peor que ninguna: avisar
+          BYTES=$(stat -c %s "mk-pets-$FECHA.sql.gz")
+          if [ "$BYTES" -lt 2000 ]; then
+            echo "::error::La copia pesa $BYTES bytes: algo salió mal"
+            exit 1
+          fi
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" \
+            --output "mk-pets-$FECHA.sql.gz.gpg" "mk-pets-$FECHA.sql.gz"
+          rm "mk-pets-$FECHA.sql.gz"
+          echo "Copia del $FECHA: $(stat -c %s "mk-pets-$FECHA.sql.gz.gpg") bytes (cifrada)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: copia-base-${{ github.run_id }}
+          path: mk-pets-*.sql.gz.gpg
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Avisar si falló
+        if: failure()
+        run: |
+          gh label create copia --repo "$GITHUB_REPOSITORY" --color B60205 --description "Avisos de la copia de seguridad" --force
+          ABIERTO=$(gh issue list --repo "$GITHUB_REPOSITORY" --label copia --state open --json number -q '.[0].number')
+          CUERPO="La copia de seguridad de la base no se pudo hacer. Corrida: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          Qué hacer: abrí Claude en la carpeta del proyecto y pedile que revise este aviso. cc @${GITHUB_REPOSITORY_OWNER}"
+          if [ -n "$ABIERTO" ]; then
+            gh issue comment "$ABIERTO" --repo "$GITHUB_REPOSITORY" --body "$CUERPO"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "Falló la copia de seguridad de la base" --label copia --body "$CUERPO"
+          fi

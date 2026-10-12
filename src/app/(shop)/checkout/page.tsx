@@ -13,6 +13,7 @@ import { DeliveryForm }       from '@/components/checkout/DeliveryForm'
 import { OrderSummaryPanel }  from '@/components/checkout/OrderSummaryPanel'
 import type { DeliveryFormData } from '@/lib/validations/checkout'
 import type { PaymentMethod } from '@/lib/shop'
+import { fullAddress } from '@/lib/barrios'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -61,7 +62,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           paymentMethod,
           customerName: data.customerName,
-          address:      data.address,
+          address:      fullAddress(data.address, data.neighborhood),
           phone:        data.phone,
           notes:        data.notes,
           items: items.map(i => ({

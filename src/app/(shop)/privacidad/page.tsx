@@ -49,6 +49,14 @@ export default function PrivacidadPage() {
           navegador para que no los pierdas al recargar la página. No usamos cookies de publicidad ni
           herramientas que te sigan por otros sitios.
         </p>
+        <p>
+          Si dejás marcada la opción al comprar, también se guardan en tu navegador tu nombre,
+          dirección y teléfono, para no pedírtelos de nuevo. Podés destildarla y se borran.
+        </p>
+        <p>
+          Contamos cuántas veces se ve cada página del sitio para saber qué interesa más. Es solo
+          un número por página y por día: no guardamos quién la vio.
+        </p>
       </section>
 
       <section>

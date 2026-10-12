@@ -1,11 +1,12 @@
 import Link from 'next/link'
-import { LayoutDashboard, Package, ShoppingCart, Tag, Store, UserCog } from 'lucide-react'
+import { LayoutDashboard, Package, Percent, ShoppingCart, Tag, Store, UserCog } from 'lucide-react'
 import { LogoutButton } from '@/components/admin/LogoutButton'
 
 const NAV = [
   { href: '/admin',            label: 'Dashboard',   icon: LayoutDashboard },
   { href: '/admin/pedidos',    label: 'Pedidos',     icon: ShoppingCart },
   { href: '/admin/productos',  label: 'Productos',   icon: Package },
+  { href: '/admin/precios',    label: 'Precios',     icon: Percent },
   { href: '/admin/categorias', label: 'Categorías',  icon: Tag },
   { href: '/admin/cuenta',     label: 'Mi cuenta',   icon: UserCog },
 ]

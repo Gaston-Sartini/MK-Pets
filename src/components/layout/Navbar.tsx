@@ -181,6 +181,13 @@ export function Navbar({ categories = [] }: NavbarProps) {
                 {cat.emoji ?? '🐾'} {cat.name}
               </Link>
             ))}
+            <Link
+              href="/seguimiento"
+              className="ml-auto flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
+                         text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
+            >
+              📦 Seguí tu pedido
+            </Link>
           </nav>
         )}
       </div>

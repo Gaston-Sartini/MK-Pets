@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils'
 import { PriceDisplay } from './PriceDisplay'
 import type { Product, ProductVariant } from '@/types'
 
+// Desde cuántas unidades se avisa que quedan pocas
+const LOW_STOCK = 3
+
 const BADGE_LABEL: Record<string, string> = {
   new: 'NUEVO', sale: 'OFERTA', hot: 'MÁS VENDIDO',
 }
@@ -17,14 +20,17 @@ function ProductCard({ product }: { product: Product }) {
   const [selected, setSelected] = useState<ProductVariant | null>(
     product.variants[0] ?? null
   )
-  const { addItem, openDrawer } = useCartStore()
-  const { addToast }            = useToastStore()
+  const { addItem }  = useCartStore()
+  const { addToast } = useToastStore()
 
+  // Con variantes, el stock que vale es el de la variante elegida
+  const stock           = selected ? selected.stock : product.stock
   const displayPrice    = selected?.price         ?? product.basePrice
   const displayOriginal = selected?.originalPrice ?? product.originalPrice
 
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault()
+    if (stock <= 0) return
     addItem({
       productId:    product.id,
       name:         product.name,
@@ -33,8 +39,8 @@ function ProductCard({ product }: { product: Product }) {
       variantLabel: selected?.label,
       unitPrice:    displayPrice,
     })
-    addToast({ message: `✓ ${product.name} agregado 🐾`, type: 'success' })
-    openDrawer()
+    // No se abre el carrito: para sumar varios productos había que cerrarlo cada vez
+    addToast({ message: `✓ ${product.name} agregado al carrito 🐾`, type: 'success' })
   }
 
   return (
@@ -75,6 +81,8 @@ function ProductCard({ product }: { product: Product }) {
               <button
                 key={v.id}
                 onClick={() => setSelected(v)}
+                aria-label={`${product.name}, ${v.label}`}
+                aria-pressed={selected?.id === v.id}
                 className={cn(
                   'text-xs px-2 py-0.5 rounded-lg border font-body font-medium transition-colors',
                   selected?.id === v.id
@@ -90,15 +98,24 @@ function ProductCard({ product }: { product: Product }) {
 
         <PriceDisplay currentPrice={displayPrice} originalPrice={displayOriginal} size="sm" />
 
+        {stock > 0 && stock <= LOW_STOCK && (
+          <p className="text-[11px] font-body font-medium text-mk-error -mt-1">
+            {stock === 1 ? 'Queda 1' : `Quedan ${stock}`}
+          </p>
+        )}
+
         <button
           onClick={handleAdd}
+          disabled={stock <= 0}
+          aria-label={`Agregar ${product.name}${selected ? ` ${selected.label}` : ''} al carrito`}
           className="w-full py-2 rounded-pill bg-mk-orange text-white
                      font-display font-bold text-sm
                      transition-all duration-200 hover:bg-mk-orange-dark
                      active:scale-95 focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-mk-orange focus-visible:ring-offset-1"
+                     focus-visible:ring-2 focus-visible:ring-mk-orange focus-visible:ring-offset-1
+                     disabled:bg-gray-300 disabled:cursor-not-allowed disabled:active:scale-100"
         >
-          + Agregar
+          {stock <= 0 ? 'Sin stock' : '+ Agregar'}
         </button>
       </div>
     </div>

@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     ? p.images[0].startsWith('http')
       ? p.images[0]
       : `${BASE_URL}${p.images[0]}`
-    : `${BASE_URL}/og-image.png`
+    : `${BASE_URL}/og-image.jpg`
 
   return {
     title: p.name,
@@ -99,7 +99,7 @@ export default async function ProductoPage({ params }: PageProps) {
     description:
       product.description ??
       `${product.name} — disponible en MK-Pets con envío gratis a CABA.`,
-    image: absoluteImages.length > 0 ? absoluteImages : [`${BASE_URL}/og-image.png`],
+    image: absoluteImages.length > 0 ? absoluteImages : [`${BASE_URL}/og-image.jpg`],
     brand: {
       '@type': 'Brand',
       name: 'MK-Pets',

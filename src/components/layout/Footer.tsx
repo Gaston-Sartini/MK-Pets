@@ -3,13 +3,6 @@ import Image from 'next/image'
 import { getCategories } from '@/lib/queries'
 import { describeCatalogTitle } from '@/lib/shop'
 
-const TRUST_BADGES = [
-  { icon: '🔒', text: 'Compra Segura' },
-  { icon: '🐾', text: 'Protegemos a tu mascota' },
-  { icon: '💬', text: 'Atención Personalizada' },
-  { icon: '⭐', text: 'Productos 100% Originales' },
-]
-
 export async function Footer() {
   // Read live categories — falls back to empty list on error so the footer
   // never breaks the entire page if the DB is unreachable.
@@ -17,20 +10,6 @@ export async function Footer() {
 
   return (
     <footer className="bg-mk-navy text-white">
-
-      {/* TRUST BADGES STRIP — Brand Guardian: obligatorios */}
-      <div className="border-b border-white/10">
-        <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {TRUST_BADGES.map(b => (
-              <div key={b.text} className="flex items-center gap-2 text-sm font-body text-white/80">
-                <span className="text-lg" aria-hidden="true">{b.icon}</span>
-                <span>{b.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
       {/* MAIN FOOTER */}
       <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-10">
@@ -77,6 +56,12 @@ export async function Footer() {
                   <span aria-hidden="true">💬</span>
                   WhatsApp: 11 6669 8395
                 </a>
+              </li>
+              <li>
+                <Link href="/seguimiento" className="flex items-center gap-2 hover:text-white transition-colors">
+                  <span aria-hidden="true">📦</span>
+                  Seguí tu pedido
+                </Link>
               </li>
               <li className="flex items-center gap-2">
                 <span aria-hidden="true">🚚</span>

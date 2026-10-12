@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     siteName: 'MK-Pets',
     images: [
       {
-        url: `${BASE_URL}/og-image.png`,
+        url: `${BASE_URL}/og-image.jpg`,
         width: 1200,
         height: 630,
         alt: 'MK-Pets — Tienda de mascotas en Buenos Aires',
@@ -60,7 +60,7 @@ export const metadata: Metadata = {
     title: 'MK-Pets — Todo para tu mascota',
     description:
       'Todo para tu perro y tu gato. Envío gratis a CABA.',
-    images: [`${BASE_URL}/og-image.png`],
+    images: [`${BASE_URL}/og-image.jpg`],
   },
   robots: {
     index: true,

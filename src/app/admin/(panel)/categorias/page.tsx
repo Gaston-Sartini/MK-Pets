@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, Save, X } from 'lucide-react'
+import { useConfirm } from '@/components/admin/ConfirmDialog'
 
 interface Category { id: string; name: string; slug: string; emoji: string | null; order: number }
 interface EditState { name: string; emoji: string; order: string }
@@ -17,6 +18,7 @@ export default function AdminCategoriasPage() {
   const [newData, setNewData]   = useState<EditState>(EMPTY)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState('')
+  const { confirm, dialog }     = useConfirm()
 
   useEffect(() => { loadCats() }, [])
 
@@ -46,7 +48,12 @@ export default function AdminCategoriasPage() {
   }
 
   const deletecat = async (id: string, name: string) => {
-    if (!confirm(`¿Eliminar la categoría "${name}"? Solo si no tiene productos asignados.`)) return
+    if (!(await confirm({
+      title: `¿Eliminar la categoría "${name}"?`,
+      detail: 'Solo se puede si no tiene productos asignados.',
+      confirmLabel: 'Sí, eliminar',
+      danger: true,
+    }))) return
     const res = await fetch(`/api/admin/categorias/${id}`, { method: 'DELETE' })
     if (res.ok) loadCats()
     else setError((await res.json()).error ?? 'Error al eliminar')
@@ -70,6 +77,7 @@ export default function AdminCategoriasPage() {
 
   return (
     <div>
+      {dialog}
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display font-bold text-2xl text-mk-dark">Categorías</h1>
         <button onClick={() => { setShowNew(true); setError('') }}
@@ -112,11 +120,11 @@ export default function AdminCategoriasPage() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={createCat} disabled={saving}
+                    <button aria-label="Guardar la categoría nueva" title="Guardar la categoría nueva" onClick={createCat} disabled={saving}
                       className="flex items-center gap-1 text-xs font-medium text-green-700 hover:text-green-900 px-2 py-1 rounded hover:bg-green-50">
                       <Save className="w-3.5 h-3.5" /> Guardar
                     </button>
-                    <button onClick={() => { setShowNew(false); setNewData(EMPTY) }}
+                    <button aria-label="Descartar la categoría nueva" title="Descartar la categoría nueva" onClick={() => { setShowNew(false); setNewData(EMPTY) }}
                       className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
                       <X className="w-4 h-4" />
                     </button>
@@ -148,11 +156,11 @@ export default function AdminCategoriasPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-end">
-                        <button onClick={saveEdit} disabled={saving}
+                        <button aria-label="Guardar los cambios" title="Guardar los cambios" onClick={saveEdit} disabled={saving}
                           className="flex items-center gap-1 text-xs font-medium text-green-700 hover:text-green-900 px-2 py-1 rounded hover:bg-green-50">
                           <Save className="w-3.5 h-3.5" /> Guardar
                         </button>
-                        <button onClick={() => setEditId(null)}
+                        <button aria-label="Descartar los cambios" title="Descartar los cambios" onClick={() => setEditId(null)}
                           className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
                           <X className="w-4 h-4" />
                         </button>
@@ -167,11 +175,11 @@ export default function AdminCategoriasPage() {
                     <td className="px-4 py-3 text-mk-mid">{c.order}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => startEdit(c)}
+                        <button aria-label={`Editar la categoría ${c.name}`} title="Editar" onClick={() => startEdit(c)}
                           className="p-1.5 text-mk-orange hover:bg-orange-50 rounded-lg transition-colors">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => deletecat(c.id, c.name)}
+                        <button aria-label={`Eliminar la categoría ${c.name}`} title="Eliminar" onClick={() => deletecat(c.id, c.name)}
                           className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

@@ -1,15 +1,8 @@
 'use client'
 
 /**
- * MK-Pets Chat — burbuja flotante propia.
- * Reemplaza al embed de Typebot. Llama a /api/chat (motor propio o n8n, según config).
- *
- * Por qué no Typebot:
- *   - El builder + viewer 3.15 tienen un Code block sandbox (vm2) que no expone
- *     fetch / require / process, lo que rompe cualquier integración con APIs
- *     externas que no esté pre-cableada como Integration block.
- *   - Construir el chat en React nos da control total sobre el rendering de
- *     cards, los CTAs y la conexión al carrito (Zustand store).
+ * MK-Pets Chat — burbuja flotante del vendedor.
+ * Llama a /api/chat y conecta las respuestas con el carrito (tarjetas, agregar, sacar).
  */
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
@@ -165,10 +158,8 @@ export default function MKPetsChat() {
       })
       const data: ChatResponse = await r.json()
 
-      // Acciones que el backend pide ejecutar sin click del usuario.
-      // Caso típico: el cliente dijo "dale agregalo" y el LLM Understand
-      // detectó intent=add_to_cart; el backend ya validó contra los
-      // productos que se mostraron antes, así que confiamos en la acción.
+      // Acciones que el vendedor pide ejecutar sin que la persona toque nada ("dale, agregalo").
+      // El servidor ya las validó contra el catálogo y el carrito.
       if (Array.isArray(data.actions)) {
         for (const action of data.actions) {
           if (action.type === 'addToCart') {

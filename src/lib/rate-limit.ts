@@ -48,6 +48,26 @@ export function rateLimit(
   return { allowed, remaining, resetAt: existing.resetAt }
 }
 
+/**
+ * El mismo límite, pero con la cuenta guardada en la base (función rate_limit_hit):
+ * vale para todas las instancias del sitio, no solo para la que atendió el pedido.
+ * Se usa donde un abuso duele (login, crear o consultar pedidos). Si la base no
+ * responde, cae al límite en memoria: nunca se deja pasar todo ni se bloquea todo.
+ */
+export async function rateLimitShared(
+  identifier: string,
+  opts: { limit: number; windowMs: number },
+): Promise<{ allowed: boolean }> {
+  try {
+    const { prisma } = await import('./prisma')
+    const rows = await prisma.$queryRaw<{ ok: boolean }[]>`
+      select public.rate_limit_hit(${identifier}, ${opts.limit}::int, ${Math.ceil(opts.windowMs / 1000)}::int) as ok`
+    return { allowed: rows[0]?.ok !== false }
+  } catch {
+    return { allowed: rateLimit(identifier, opts).allowed }
+  }
+}
+
 /** Extract a safe IP identifier from the request */
 export function getClientIp(request: Request): string {
   const headers = request.headers as Headers

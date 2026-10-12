@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { isAdminUser } from '@/lib/admin-auth'
-import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { isAdminUser, SESSION_COOKIE } from '@/lib/admin-auth'
+import { rateLimitShared, getClientIp } from '@/lib/rate-limit'
 
 export async function POST(req: Request) {
   // Frena fuerza bruta básica. Supabase Auth aplica además su propio límite por IP.
-  const rl = rateLimit(`login:${getClientIp(req)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
+  const rl = await rateLimitShared(`login:${getClientIp(req)}`, { limit: 10, windowMs: 10 * 60 * 1000 })
   if (!rl.allowed) {
     return NextResponse.json({ error: 'Demasiados intentos. Probá en unos minutos.' }, { status: 429 })
   }
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
         getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+            cookieStore.set(name, value, { ...options, ...SESSION_COOKIE })
           )
         },
       },

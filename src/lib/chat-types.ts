@@ -1,7 +1,4 @@
-/**
- * Wire format between n8n (the AI agent) → Typebot → this frontend.
- * See docs/n8n-system-prompt.md for the contract the agent must produce.
- */
+/** Formato de las respuestas del chat vendedor (/api/chat) que consume el sitio. */
 
 export type CardAction  = 'addToCart' | 'openProduct'
 export type ProductBadge = 'NUEVO' | 'OFERTA' | 'MÁS VENDIDO' | null
@@ -25,8 +22,7 @@ export interface ChatCard {
  * respuesta. Ej: el bot decide agregar un producto al carrito sin que el
  * usuario tenga que clickear "Agregar al carrito".
  *
- * El productId DEBE existir en el catálogo y haber sido mostrado al cliente
- * en turnos previos (el backend valida esto contra staticData.shownProducts).
+ * El servidor valida que el producto exista en el catálogo antes de mandarla.
  */
 export interface ChatActionAddToCart {
   type:         'addToCart'

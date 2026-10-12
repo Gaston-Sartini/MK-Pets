@@ -5,10 +5,11 @@ import { orderUpdateSchema } from '@/lib/validations/admin'
 import { restoreStock } from '@/lib/stock'
 import { buildStatusMessage, sendWhatsApp, type CustomerUpdate } from '@/lib/whatsapp'
 import { logger } from '@/lib/logger'
+import { transitionKind } from '@/lib/order-status'
 
 type Outcome =
   | { kind: 'ok'; notify: CustomerUpdate | null; customerName: string; phone: string }
-  | { kind: 'notFound' | 'cancelledIsFinal' | 'conflict' }
+  | { kind: 'notFound' | 'cancelledIsFinal' | 'conflict' | 'badTransition' }
 
 // Estados que el cliente quiere enterarse por WhatsApp
 const NOTIFY_ON_STATUS: Partial<Record<string, CustomerUpdate>> = {
@@ -63,6 +64,11 @@ export async function PUT(req: Request, { params }: { params: { numero: string }
 
       if (!status || order.status === status) return done(null)
 
+      // Se avanza libremente y se puede volver un paso para corregir un clic equivocado.
+      // Saltos hacia atrás (de Entregado a Pendiente) no: confunden el historial.
+      const kind = transitionKind(order.status, status)
+      if (kind === 'invalid') return { kind: 'badTransition' }
+
       // El guard en el WHERE evita devolver stock dos veces si llegan dos
       // cancelaciones simultáneas (doble click, dos pestañas).
       const updated = await tx.order.updateMany({
@@ -72,7 +78,8 @@ export async function PUT(req: Request, { params }: { params: { numero: string }
       if (updated.count === 0) return { kind: 'conflict' }
 
       if (status === 'CANCELLED') await restoreStock(tx, order.items)
-      return done(NOTIFY_ON_STATUS[status] ?? null)
+      // Volver un paso es una corrección interna: al cliente no se le manda nada
+      return done(kind === 'back' ? null : NOTIFY_ON_STATUS[status] ?? null)
     })
   } catch (err) {
     logger.error('Error updating order', { error: err instanceof Error ? err.message : String(err) })
@@ -84,6 +91,7 @@ export async function PUT(req: Request, { params }: { params: { numero: string }
       notFound:         { status: 404, error: 'Pedido no encontrado' },
       cancelledIsFinal: { status: 409, error: 'El pedido está cancelado y su stock ya fue devuelto. Si el cliente lo quiere igual, que haga un pedido nuevo.' },
       conflict:         { status: 409, error: 'El pedido cambió mientras lo editabas. Recargá la página.' },
+      badTransition:    { status: 409, error: 'Ese cambio de estado no se puede hacer: solo se avanza, o se vuelve un paso para corregir.' },
     }[outcome.kind]
     return NextResponse.json({ error: failure.error }, { status: failure.status })
   }

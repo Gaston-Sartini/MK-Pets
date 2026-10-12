@@ -21,7 +21,7 @@ export async function middleware(request: NextRequest) {
             // Propagate refreshed tokens to both request and response
             cookiesToSet.forEach(({ name, value, options }) => {
               request.cookies.set(name, value)
-              response.cookies.set(name, value, options)
+              response.cookies.set(name, value, { ...options, httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' })
             })
           },
         },

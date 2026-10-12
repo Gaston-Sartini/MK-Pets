@@ -92,8 +92,8 @@ export default async function ProductosPage({ searchParams }: PageProps) {
     <>
       <div className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">
 
-        {/* CHIPS CATEGORÍAS */}
-        <nav aria-label="Filtrar por categoría" className="mb-6">
+        {/* CHIPS CATEGORÍAS — solo en celular: en escritorio ya están en el encabezado */}
+        <nav aria-label="Filtrar por categoría" className="mb-6 md:hidden">
           <Suspense fallback={null}>
             <CategoryChips categories={categories} />
           </Suspense>

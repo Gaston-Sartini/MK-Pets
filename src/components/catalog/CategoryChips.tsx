@@ -36,12 +36,14 @@ export function CategoryChips({ categories, activeCat }: Props) {
         <button
           key={cat.slug}
           onClick={() => handleClick(cat.slug)}
+          aria-label={cat.slug ? `Ver ${cat.name}` : 'Ver todos los productos'}
+          aria-pressed={current === cat.slug}
           className={cn(
             'category-chip flex-shrink-0',
             current === cat.slug ? 'category-chip-active' : 'category-chip-inactive'
           )}
         >
-          <span className="text-xl leading-none">{cat.emoji}</span>
+          <span className="text-xl leading-none" aria-hidden="true">{cat.emoji}</span>
           <span>{cat.name}</span>
         </button>
       ))}

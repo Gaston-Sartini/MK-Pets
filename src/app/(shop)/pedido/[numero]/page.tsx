@@ -9,6 +9,8 @@ import { PayWithMpButton } from '@/components/checkout/PayWithMpButton'
 import { CopyText } from '@/components/checkout/CopyText'
 import { syncMpPayment } from '@/lib/mp-payments'
 import { SHOP_TIMEZONE, whatsappLink } from '@/lib/shop'
+import { OrderTimeline } from '@/components/order/OrderTimeline'
+import { CancelOrderButton, ReorderButton } from '@/components/order/OrderActions'
 
 interface Props {
   params:      { numero: string }
@@ -111,6 +113,8 @@ export default async function OrderPage({ params, searchParams }: Props) {
             )}
           </div>
         </div>
+
+        <OrderTimeline status={order.status} />
 
         {/* Datos para transferir */}
         {awaitingTransfer && (
@@ -220,14 +224,28 @@ export default async function OrderPage({ params, searchParams }: Props) {
               ✏️ Modificar pedido
             </Link>
           )}
+          {!isOpen && (
+            <ReorderButton
+              items={order.items.map(item => ({
+                productId:    item.product.id,
+                name:         item.product.name,
+                image:        item.product.images?.[0] ?? '',
+                slug:         item.product.slug,
+                variantLabel: item.variantLabel,
+                unitPrice:    item.unitPrice,
+                quantity:     item.quantity,
+              }))}
+            />
+          )}
           <Link href="/" className="btn-ghost text-center">
             Seguir comprando 🐾
           </Link>
+          {canModify && <CancelOrderButton orderNumber={order.orderNumber} />}
         </div>
 
         {canModify && (
           <p className="text-center text-xs text-mk-mid mt-3">
-            Podés modificar tu pedido hasta las{' '}
+            Podés modificar o cancelar tu pedido hasta las{' '}
             {order.canModifyUntil.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: SHOP_TIMEZONE })}
           </p>
         )}
