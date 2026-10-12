@@ -246,7 +246,8 @@ export default function MKPetsChat() {
         onClick={() => setIsOpen((v) => !v)}
         aria-label={isOpen ? 'Cerrar chat' : 'Abrir chat'}
         className={cn(
-          'fixed z-[9998] bottom-5 right-5 h-14 w-14 rounded-full shadow-card',
+          // A 4rem del borde: más abajo tapaba los links del pie ("Admin") en el celular
+          'fixed z-[9998] bottom-16 right-5 h-14 w-14 rounded-full shadow-card',
           'flex items-center justify-center transition-transform',
           'bg-mk-orange hover:bg-mk-orange-dark active:scale-95',
           'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-mk-orange/40',
@@ -266,8 +267,9 @@ export default function MKPetsChat() {
       {isOpen && (
         <div
           className={cn(
-            'fixed z-[9999] bottom-24 right-5 max-w-[calc(100vw-2.5rem)]',
-            'w-[380px] h-[560px] max-h-[calc(100vh-7rem)]',
+            // Arriba del botón (4rem + su alto + el mismo aire de antes)
+            'fixed z-[9999] bottom-[8.75rem] right-5 max-w-[calc(100vw-2.5rem)]',
+            'w-[380px] h-[560px] max-h-[calc(100vh-9.75rem)]',
             'bg-white rounded-card shadow-card-hover flex flex-col overflow-hidden',
             'animate-fade-in border border-black/5',
           )}
