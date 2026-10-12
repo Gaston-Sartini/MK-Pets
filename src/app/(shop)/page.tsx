@@ -12,25 +12,30 @@ import {
   getProductsByCategory,
   getCategories,
 } from '@/lib/queries'
+import { describeCatalog, describeCatalogTitle } from '@/lib/shop'
 
 // Cache home page for 5 minutes — balances freshness vs. DB load
 export const revalidate = 300
 
 const BASE_URL = 'https://mk-pets.com.ar'
 
-export const metadata: Metadata = {
-  title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
-  description:
-    'Comprá alimentos para perros y gatos, snacks y productos de higiene para mascotas. Envío gratis a CABA. La mejor tienda de mascotas online de Buenos Aires.',
-  alternates: {
-    canonical: BASE_URL,
-  },
-  openGraph: {
+// La descripción nombra los rubros que hoy tienen productos: no promete lo que no se vende.
+export async function generateMetadata(): Promise<Metadata> {
+  const rubros = (await getCategories().catch(() => [])).map(c => c.name)
+  return {
     title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
     description:
-      'Alimentos, snacks y productos de higiene para mascotas. Envío gratis a CABA.',
-    url: BASE_URL,
-  },
+      `Comprá ${describeCatalog(rubros)} para perros y gatos. Envío gratis a CABA. Tu tienda de mascotas online en Buenos Aires.`,
+    alternates: {
+      canonical: BASE_URL,
+    },
+    openGraph: {
+      title: 'Tienda de mascotas en Buenos Aires | MK-Pets',
+      description:
+        `${describeCatalogTitle(rubros)} para mascotas. Envío gratis a CABA.`,
+      url: BASE_URL,
+    },
+  }
 }
 
 const websiteSchema = {
@@ -79,7 +84,7 @@ export default async function HomePage() {
   return (
     <>
       <JsonLd data={websiteSchema} />
-      <HeroBanner />
+      <HeroBanner offer={describeCatalogTitle(categories.map(c => c.name))} />
 
       {/* CATEGORÍAS */}
       <section aria-label="Categorías" className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">

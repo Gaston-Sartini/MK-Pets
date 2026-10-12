@@ -3,6 +3,7 @@ import { normalizeArgPhone, buildOrderMessage, buildOwnerMessage, buildStatusMes
 import { buildResponse, parseModelJson, sanitizeHistory, retryDelayMs } from '@/lib/chat/engine'
 import { generateOrderNumber, parseDbDate, canModifyOrder } from '@/lib/utils'
 import { isAdminUser } from '@/lib/admin-auth'
+import { describeCatalog, describeCatalogTitle } from '@/lib/shop'
 import { productSchema, orderStatusSchema, slugify } from '@/lib/validations/admin'
 
 describe('normalizeArgPhone', () => {
@@ -237,5 +238,22 @@ describe('chat engine', () => {
     expect(retryDelayMs('1.2')).toBe(1300)
     expect(retryDelayMs(null)).toBe(1000)
     expect(retryDelayMs('45')).toBeNull()
+  })
+})
+
+describe('describeCatalog', () => {
+  it('arma la frase con los rubros que hoy tienen productos', () => {
+    expect(describeCatalog(['Gatos', 'Perros', 'Snacks', 'Húmedos', 'Higiene'])).toBe('alimentos, snacks y productos de higiene')
+    expect(describeCatalogTitle(['Snacks', 'Gatos'])).toBe('Alimentos y snacks')
+  })
+
+  it('suma sola un rubro nuevo y deja de nombrar uno que se vació', () => {
+    expect(describeCatalog(['Gatos', 'Snacks', 'Higiene', 'Juguetes', 'Ropa'])).toBe('alimentos, snacks, productos de higiene, juguetes y ropa')
+    expect(describeCatalog(['Gatos', 'Perros'])).toBe('alimentos')
+  })
+
+  it('usa "e" antes de una palabra que empieza con i, y no se rompe sin categorías', () => {
+    expect(describeCatalog(['Perros', 'Indumentaria'])).toBe('alimentos e indumentaria')
+    expect(describeCatalog([])).toBe('productos')
   })
 })
