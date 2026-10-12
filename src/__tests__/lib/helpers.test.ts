@@ -172,9 +172,9 @@ describe('buildOrderMessage', () => {
 
 describe('chat engine', () => {
   const catalog = [
-    { id: 'p1', name: 'Whiskas Húmedo 85g', slug: 'whiskas', category: 'Húmedos', image: 'https://x/w.png',
+    { id: 'p1', name: 'Whiskas Húmedo 85g', slug: 'whiskas', category: 'Húmedos', description: null, image: 'https://x/w.png',
       price: 1800, originalPrice: null, stock: 10, badge: null, variants: [] },
-    { id: 'p2', name: 'Arena Glutinante Neutra', slug: 'arena', category: 'Higiene', image: '',
+    { id: 'p2', name: 'Arena Glutinante Neutra', slug: 'arena', category: 'Higiene', description: null, image: '',
       price: 7500, originalPrice: null, stock: 0, badge: 'hot',
       variants: [
         { label: '5,3 KG', price: 7500,  originalPrice: null, stock: 4 },
