@@ -20,6 +20,18 @@ vi.mock('@/lib/prisma', () => {
   return { prisma }
 })
 
+// `after()` de Next.js solo existe dentro de un pedido real: en los tests corre
+// la tarea enseguida (y sus errores no rompen la respuesta, como en producción).
+vi.mock('next/server', async (importOriginal) => {
+  const original = await importOriginal<typeof import('next/server')>()
+  return {
+    ...original,
+    after: (task: unknown) => {
+      Promise.resolve().then(() => (typeof task === 'function' ? task() : task)).catch(() => {})
+    },
+  }
+})
+
 process.env.MP_ACCESS_TOKEN   = 'TEST_ACCESS_TOKEN'
 process.env.MP_WEBHOOK_SECRET = 'test-webhook-secret-32-chars-ok!'
 process.env.SESSION_SECRET    = 'test-session-secret-32-chars-ok!'

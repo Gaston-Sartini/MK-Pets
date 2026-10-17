@@ -6,6 +6,7 @@ import { Package, ShoppingCart, AlertTriangle, Clock } from 'lucide-react'
 import { formatPrice, parseDbDate } from '@/lib/utils'
 import { SHOP_TIMEZONE } from '@/lib/shop'
 import { summarizeSales, type SaleOrder } from '@/lib/sales'
+import { isWhatsAppConfigured, whatsAppHealth } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
 
@@ -111,7 +112,10 @@ export default async function AdminDashboard() {
   const supabase = await getAdminClient()
   if (!supabase) redirect('/admin/login')
 
-  const { activeProducts, pendingOrders, lowStock, recentOrders, sales, overdue, visits } = await getStats(supabase)
+  const [{ activeProducts, pendingOrders, lowStock, recentOrders, sales, overdue, visits }, whatsapp] = await Promise.all([
+    getStats(supabase),
+    isWhatsAppConfigured() ? whatsAppHealth() : Promise.resolve(null),
+  ])
 
   const windows = [
     { label: 'Hoy',             ...sales.today },
@@ -129,6 +133,18 @@ export default async function AdminDashboard() {
   return (
     <div>
       <h1 className="font-display font-bold text-2xl text-mk-dark mb-6">Dashboard</h1>
+
+      {/* WHATSAPP: si se cae, los clientes no reciben nada y nadie se entera */}
+      {whatsapp && !whatsapp.ok && (
+        <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          <p className="font-bold">⚠️ WhatsApp no está enviando mensajes</p>
+          <p className="mt-1">{whatsapp.detail}. Mientras tanto los clientes no reciben el aviso de su pedido: escribiles vos desde el WhatsApp de la tienda (en Pedidos, al cambiar un estado, te aparece el mensaje listo para mandar).</p>
+          <p className="mt-1">Para arreglarlo, abrí Claude en la carpeta del proyecto y pedile que revise WhatsApp.</p>
+        </div>
+      )}
+      {whatsapp?.ok && (
+        <p className="mb-6 text-sm text-green-700">✅ WhatsApp conectado: los avisos a clientes están saliendo.</p>
+      )}
 
       {/* VENTAS */}
       <h2 className="font-display font-bold text-sm uppercase tracking-wide text-mk-mid mb-3">Ventas</h2>

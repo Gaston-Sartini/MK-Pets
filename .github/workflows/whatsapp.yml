@@ -1,0 +1,92 @@
+name: WhatsApp en línea
+
+# Revisa cada 30 minutos que WhatsApp esté saliendo de verdad.
+#
+# Evolution puede decir "conectado" con la conexión a WhatsApp muerta por
+# dentro (pasó en octubre de 2026: los avisos no salieron durante días y nadie
+# se enteró). Por eso, además del estado, pregunta si un número inventado tiene
+# WhatsApp: no le manda nada a nadie, pero necesita la conexión viva.
+#
+# Si falla, abre un aviso (issue con la etiqueta `whatsapp`); cuando vuelve, lo
+# cierra solo. En la máquina hay además un vigilante que reinicia Evolution si la
+# conexión se cae (infra/evolution/watchdog.sh): este aviso es para lo que el
+# vigilante no puede arreglar solo, como un teléfono desvinculado.
+
+on:
+  schedule:
+    - cron: '12,42 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: whatsapp
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ¿Sale WhatsApp?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EVOLUTION_API_URL: ${{ secrets.EVOLUTION_API_URL }}
+      EVOLUTION_API_KEY: ${{ secrets.EVOLUTION_API_KEY }}
+      INSTANCE: mi-bot
+
+    steps:
+      - name: Probar la conexión
+        run: |
+          if [ -z "$EVOLUTION_API_URL" ] || [ -z "$EVOLUTION_API_KEY" ]; then
+            echo "- Faltan los secrets EVOLUTION_API_URL o EVOLUTION_API_KEY del repositorio" > falla.txt
+            exit 1
+          fi
+          # Dos intentos: el vigilante de la máquina puede estar reiniciando Evolution justo ahora
+          for i in 1 2; do
+            ESTADO=$(curl -s -m 20 -H "apikey: $EVOLUTION_API_KEY" "$EVOLUTION_API_URL/instance/connectionState/$INSTANCE" | grep -o '"state":"[a-z]*"' | cut -d'"' -f4 || true)
+            if [ "$ESTADO" = "open" ]; then
+              NUMERO="54911$(shuf -i 10000000-99999999 -n 1)"
+              RESPUESTA=$(curl -s -m 25 -X POST -H "apikey: $EVOLUTION_API_KEY" -H 'content-type: application/json' \
+                -d "{\"numbers\":[\"$NUMERO\"]}" "$EVOLUTION_API_URL/chat/whatsappNumbers/$INSTANCE" || true)
+              if echo "$RESPUESTA" | grep -q '"exists"'; then
+                echo "WhatsApp conectado."
+                exit 0
+              fi
+              FALLA="- La sesión figura conectada, pero la conexión con WhatsApp está caída: $(echo "$RESPUESTA" | head -c 200)"
+            elif [ -z "$ESTADO" ]; then
+              FALLA="- El servidor de WhatsApp ($EVOLUTION_API_URL) no responde"
+            else
+              FALLA="- La sesión de WhatsApp está \"$ESTADO\": hay que volver a vincular el teléfono (escanear el QR)"
+            fi
+            [ "$i" = 1 ] && sleep 240
+          done
+          echo "$FALLA" | tee falla.txt
+          exit 1
+
+      - name: Avisar si no sale
+        if: failure()
+        run: |
+          gh label create whatsapp --repo "$GITHUB_REPOSITORY" --color B60205 --description "WhatsApp no está enviando mensajes" --force
+          ABIERTO=$(gh issue list --repo "$GITHUB_REPOSITORY" --label whatsapp --state open --json number -q '.[0].number')
+          {
+            echo "WhatsApp no está enviando mensajes: los clientes no reciben el aviso de su pedido ni los cambios de estado."
+            cat falla.txt 2>/dev/null || echo "- no se pudo completar el chequeo"
+            echo
+            echo "Mientras tanto: en el panel, al cambiar el estado de un pedido, aparece el mensaje listo para mandarlo a mano."
+            echo
+            echo "Corrida: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "Qué hacer: abrí Claude en la carpeta del proyecto y pedile que revise este aviso. cc @${GITHUB_REPOSITORY_OWNER}"
+          } > cuerpo.md
+          if [ -z "$ABIERTO" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "WhatsApp no está enviando mensajes" --label whatsapp --body-file cuerpo.md
+          fi
+
+      - name: Cerrar el aviso cuando vuelve
+        if: success()
+        run: |
+          ABIERTO=$(gh issue list --repo "$GITHUB_REPOSITORY" --label whatsapp --state open --json number -q '.[0].number' || true)
+          if [ -n "$ABIERTO" ]; then
+            gh issue close "$ABIERTO" --repo "$GITHUB_REPOSITORY" --comment "WhatsApp volvió a funcionar: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi

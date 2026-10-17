@@ -169,3 +169,27 @@ las desconecte.
 - Memoria: `sudo docker stats --no-stream`.
 - Logs: `sudo docker compose -f /opt/mkpets-wa/docker-compose.gcp.yml logs -f evolution`.
 - No levantes la misma instancia en la PC y en la nube a la vez.
+
+## Si WhatsApp no envía
+
+Evolution puede decir `"state":"open"` con la conexión a WhatsApp muerta por
+dentro: todos los envíos responden `Connection Closed` (pasó en octubre de 2026 y
+los avisos no salieron durante días). Hay tres defensas:
+
+1. **Vigilante en la máquina** (`watchdog.sh`, cada 5 minutos, lo instala
+   `gcp-bootstrap.sh` en cada arranque): si la conexión está caída dos veces
+   seguidas, reinicia el contenedor de Evolution. Registro en
+   `/var/log/mkpets-watchdog.log`.
+2. **Chequeo de GitHub** (`.github/workflows/whatsapp.yml`, cada 30 minutos):
+   abre un aviso con la etiqueta `whatsapp` si no sale, y lo cierra cuando vuelve.
+3. **Panel**: el Dashboard muestra si WhatsApp está conectado, y en Pedidos, si un
+   aviso no sale, aparece el mensaje listo para mandarlo a mano.
+
+Arreglo a mano, desde Cloud Shell:
+
+```bash
+gcloud compute ssh mkpets-wa --zone=us-central1-a --command="sudo docker compose -f /opt/mkpets-wa/docker-compose.gcp.yml restart evolution"
+```
+
+Si después del reinicio la sesión queda en `close`, el teléfono se desvinculó:
+hay que volver a escanear el QR (sección de vinculación, más arriba).
