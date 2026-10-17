@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { generateOrderNumber } from '@/lib/utils'
@@ -169,9 +169,11 @@ export async function POST(request: Request) {
       })
     })
 
-    // Aviso al cliente (y al dueño si está OWNER_WHATSAPP). El texto depende del
+    // Los WhatsApp salen después de responder (`after`): el cliente ve su pedido
+    // confirmado al instante aunque el servidor de WhatsApp tarde o esté caído.
+    // Aviso al cliente (y al dueño si está OWNER_WHATSAPP); el texto depende del
     // medio de pago: ver buildOrderMessage.
-    await notifyOrderWhatsApp({
+    const notification = {
       orderNumber,
       customerName,
       phone,
@@ -186,7 +188,7 @@ export async function POST(request: Request) {
         quantity:     i.quantity,
         unitPrice:    i.unitPrice,
       })),
-    })
+    }
 
     // Lo que este pedido dejó con pocas unidades: la tienda se entera sin abrir el panel
     const low = resolvedItems
@@ -196,13 +198,17 @@ export async function POST(request: Request) {
         return { name: `${nameMap.get(i.productId) ?? 'Producto'}${i.variantLabel ? ` (${i.variantLabel})` : ''}`, left }
       })
       .filter(i => i.left <= LOW_STOCK_NOTICE)
-    if (low.length > 0) {
-      await notifyOwner(
-        `⚠️ Poco stock después del pedido ${orderNumber}:\n` +
-          low.map(i => `• ${i.name}: ${i.left === 0 ? 'sin stock' : i.left === 1 ? 'queda 1' : `quedan ${i.left}`}`).join('\n'),
-        { orderNumber, event: 'low-stock' },
-      )
-    }
+
+    after(async () => {
+      await notifyOrderWhatsApp(notification)
+      if (low.length > 0) {
+        await notifyOwner(
+          `⚠️ Poco stock después del pedido ${orderNumber}:\n` +
+            low.map(i => `• ${i.name}: ${i.left === 0 ? 'sin stock' : i.left === 1 ? 'queda 1' : `quedan ${i.left}`}`).join('\n'),
+          { orderNumber, event: 'low-stock' },
+        )
+      }
+    })
 
     return NextResponse.json({
       orderNumber: order.orderNumber,

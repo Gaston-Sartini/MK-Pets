@@ -9,6 +9,7 @@
 #      metadatos de la instancia, y se cierra. Así las credenciales viajan
 #      cifradas desde la PC y no hay que pegarlas a mano en ninguna terminal.
 #   4. Levanta Evolution detrás de Caddy (HTTPS automático).
+#   5. Instala el vigilante que reinicia Evolution si la conexión se cae (watchdog.sh).
 #
 # El dominio es <ip-con-guiones>.sslip.io: resuelve solo a la IP de la máquina,
 # sin registrar nada. Cuando haya dominio propio, se cambia WA_DOMAIN en .env.
@@ -92,4 +93,10 @@ chmod 600 .env
 
 log "levantando Evolution"
 docker compose -f docker-compose.gcp.yml up -d
+
+# Vigilante: si la conexión con WhatsApp se cae por dentro, reinicia Evolution (ver watchdog.sh)
+curl -fsSLo watchdog.sh "$REPO_RAW/watchdog.sh" && chmod 700 watchdog.sh
+echo "*/5 * * * * root $DIR/watchdog.sh" > /etc/cron.d/mkpets-watchdog
+chmod 644 /etc/cron.d/mkpets-watchdog
+log "vigilante de WhatsApp instalado (cada 5 minutos)"
 log "listo: https://$DOMAIN"

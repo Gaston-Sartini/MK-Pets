@@ -3,7 +3,7 @@ import { requireAdmin } from '@/lib/admin-auth'
 import { prisma } from '@/lib/prisma'
 import { orderUpdateSchema } from '@/lib/validations/admin'
 import { restoreStock } from '@/lib/stock'
-import { buildStatusMessage, sendWhatsApp, type CustomerUpdate } from '@/lib/whatsapp'
+import { buildStatusMessage, manualWhatsAppLink, sendWhatsApp, type CustomerUpdate } from '@/lib/whatsapp'
 import { logger } from '@/lib/logger'
 import { transitionKind } from '@/lib/order-status'
 
@@ -98,14 +98,14 @@ export async function PUT(req: Request, props: { params: Promise<{ numero: strin
   }
 
   // Fuera de la transacción: un WhatsApp caído no debe revertir el cambio.
+  // Si no sale solo, el panel ofrece mandarlo a mano desde el WhatsApp de la tienda.
   let notified = false
+  let manualLink: string | null = null
   if (outcome.notify) {
-    notified = await sendWhatsApp(
-      outcome.phone,
-      buildStatusMessage(outcome.notify, { orderNumber: params.numero, customerName: outcome.customerName }),
-      { orderNumber: params.numero, update: outcome.notify },
-    )
+    const text = buildStatusMessage(outcome.notify, { orderNumber: params.numero, customerName: outcome.customerName })
+    notified = await sendWhatsApp(outcome.phone, text, { orderNumber: params.numero, update: outcome.notify })
+    if (!notified) manualLink = manualWhatsAppLink(outcome.phone, text)
   }
 
-  return NextResponse.json({ ok: true, notified })
+  return NextResponse.json({ ok: true, notified, manualLink })
 }

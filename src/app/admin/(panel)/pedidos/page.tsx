@@ -106,6 +106,7 @@ export default function AdminPedidosPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [saving, setSaving]     = useState<string | null>(null)
   const [notice, setNotice]     = useState('')
+  const [manual, setManual]     = useState<{ name: string; link: string } | null>(null)
   const [printing, setPrinting] = useState<AdminOrder | null>(null)
   const { confirm, dialog }     = useConfirm()
 
@@ -159,6 +160,7 @@ export default function AdminPedidosPage() {
   const save = async (order: AdminOrder, change: { status?: string; paymentStatus?: string }) => {
     setSaving(order.orderNumber)
     setNotice('')
+    setManual(null)
     try {
       const res  = await fetch(`/api/admin/pedidos/${order.orderNumber}`, {
         method:  'PUT',
@@ -171,6 +173,7 @@ export default function AdminPedidosPage() {
       } else {
         setError('')
         if (data.notified) setNotice(`Le avisamos a ${order.customerName} por WhatsApp.`)
+        else if (data.manualLink) setManual({ name: order.customerName, link: data.manualLink })
       }
     } catch {
       setError('Error de conexión al guardar el cambio')
@@ -245,6 +248,13 @@ export default function AdminPedidosPage() {
 
       {notice && (
         <div role="status" className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg text-sm">{notice}</div>
+      )}
+      {manual && (
+        <div role="status" className="mb-4 bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-lg text-sm">
+          El cambio se guardó, pero el WhatsApp a {manual.name} no salió solo.{' '}
+          <a href={manual.link} target="_blank" rel="noopener noreferrer" className="font-bold underline">Mandáselo vos desde tu WhatsApp</a>
+          {' '}(el mensaje ya va escrito).
+        </div>
       )}
 
       <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3">

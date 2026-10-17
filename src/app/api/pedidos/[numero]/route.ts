@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
 import { canModifyOrder } from '@/lib/utils'
@@ -177,10 +177,10 @@ export async function PATCH(request: Request, props: { params: Promise<{ numero:
     return NextResponse.json({ error: 'No se pudo modificar el pedido' }, { status: 500 })
   }
 
-  await notifyOwner(
+  after(() => notifyOwner(
     `✏️ El cliente modificó el pedido ${params.numero}. Nuevo total: ${formatPrice(newTotal)}. Mirá las cantidades en el panel antes de prepararlo.`,
     { orderNumber: params.numero, event: 'modified' },
-  )
+  ))
 
   return NextResponse.json({ orderNumber: params.numero, total: newTotal })
 }
@@ -233,10 +233,10 @@ export async function DELETE(request: Request, props: { params: Promise<{ numero
     return NextResponse.json({ error: 'No se pudo cancelar el pedido' }, { status: 500 })
   }
 
-  await notifyOwner(
+  after(() => notifyOwner(
     `❌ ${order.customerName} canceló el pedido ${params.numero} (${formatPrice(Number(order.total))}). El stock ya volvió.`,
     { orderNumber: params.numero, event: 'cancelled-by-customer' },
-  )
+  ))
 
   return NextResponse.json({ ok: true })
 }
