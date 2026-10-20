@@ -77,7 +77,8 @@ export function Navbar({ categories = [] }: NavbarProps) {
                 priority
               />
             </div>
-            <div>
+            {/* En celulares muy angostos queda solo el logo: deja lugar para "Mi pedido" */}
+            <div className="max-[359px]:hidden">
               <span className="font-display font-black text-mk-dark text-lg leading-none">
                 MK-<span className="text-mk-orange">pets</span>
               </span>
@@ -108,6 +109,16 @@ export function Navbar({ categories = [] }: NavbarProps) {
 
           {/* RIGHT ACTIONS */}
           <div className="flex items-center gap-1 md:gap-2 ml-auto">
+            {/* SEGUÍ TU PEDIDO — celular (en la compu está en la fila de categorías) */}
+            <Link
+              href="/seguimiento"
+              aria-label="Seguí tu pedido"
+              className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-pill text-xs font-body font-bold whitespace-nowrap
+                         text-mk-orange border-2 border-mk-orange hover:bg-mk-orange hover:text-white transition-colors"
+            >
+              {/* En celulares muy angostos el texto largo no entra al lado del buscador y el carrito */}
+              📦 <span className="max-[359px]:hidden">Seguí tu pedido</span><span className="hidden max-[359px]:inline">Mi pedido</span>
+            </Link>
             {/* Search icon — mobile */}
             <button
               onClick={() => setSearchOpen(v => !v)}
@@ -166,7 +177,7 @@ export function Navbar({ categories = [] }: NavbarProps) {
           <nav aria-label="Categorías" className="hidden md:flex items-center gap-1 pb-2 border-t border-gray-50 pt-1">
             <Link
               href="/productos"
-              className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
+              className="flex items-center gap-1 px-3 py-1 rounded-xl text-[0.9rem] font-body font-medium
                          text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
             >
               🐾 Todos
@@ -175,7 +186,7 @@ export function Navbar({ categories = [] }: NavbarProps) {
               <Link
                 key={cat.slug}
                 href={`/productos?cat=${cat.slug}`}
-                className="flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
+                className="flex items-center gap-1 px-3 py-1 rounded-xl text-[0.9rem] font-body font-medium
                            text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
               >
                 {cat.emoji ?? '🐾'} {cat.name}
@@ -183,8 +194,8 @@ export function Navbar({ categories = [] }: NavbarProps) {
             ))}
             <Link
               href="/seguimiento"
-              className="ml-auto flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-body font-medium
-                         text-mk-mid hover:text-mk-orange hover:bg-mk-orange-light transition-colors"
+              className="ml-auto flex items-center gap-1 px-3.5 py-1 rounded-pill text-[0.9rem] font-body font-bold
+                         text-mk-orange border-2 border-mk-orange hover:bg-mk-orange hover:text-white transition-colors"
             >
               📦 Seguí tu pedido
             </Link>
