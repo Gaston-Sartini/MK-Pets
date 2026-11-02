@@ -171,7 +171,7 @@ export async function POST(request: Request) {
 
     // Los WhatsApp salen después de responder (`after`): el cliente ve su pedido
     // confirmado al instante aunque el servidor de WhatsApp tarde o esté caído.
-    // Aviso al cliente (y al dueño si está OWNER_WHATSAPP); el texto depende del
+    // Aviso al cliente (y a la tienda, ver getOwnerNumber); el texto depende del
     // medio de pago: ver buildOrderMessage.
     const notification = {
       orderNumber,

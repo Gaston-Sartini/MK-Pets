@@ -1,15 +1,16 @@
+import { Fragment } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { autoHeroDescription, DEFAULT_HERO, DEFAULT_HERO_IMAGE, type HeroContent } from '@/lib/site-content'
 
-const TRUST_BADGES = [
-  { icon: '🚚', text: 'Envío gratis a CABA' },
-  { icon: '🔒', text: 'Compra segura' },
-  { icon: '💬', text: 'Atención personalizada' },
-  { icon: '⭐', text: 'Productos 100% originales' },
-]
-
-/** `offer`: lo que se vende hoy, armado con las categorías que tienen productos (describeCatalogTitle). */
-export function HeroBanner({ offer }: { offer: string }) {
+/**
+ * Portada. Los textos y la imagen se cambian desde el panel (Admin → Portada).
+ * `offer`: lo que se vende hoy, armado con las categorías que tienen productos
+ * (describeCatalogTitle); se usa cuando la descripción queda vacía.
+ */
+export function HeroBanner({ offer, content = DEFAULT_HERO }: { offer: string; content?: HeroContent }) {
+  const image = content.image ?? DEFAULT_HERO_IMAGE
+  const title = content.title.split('\n')
   return (
     <section className="relative overflow-hidden bg-mk-light">
       {/* PATAS DECORATIVAS */}
@@ -28,21 +29,22 @@ export function HeroBanner({ offer }: { offer: string }) {
 
             {/* TAGLINE — Brand Guardian: va arriba del H1 */}
             <p className="font-display font-bold text-mk-orange text-sm uppercase tracking-widest mb-3">
-              Tu mascota, nuestra prioridad 🐾
+              {content.tagline}
             </p>
 
             <h1 className="font-display font-extrabold text-mk-dark leading-tight mb-2
                            text-4xl sm:text-5xl lg:text-6xl">
-              Todo para tu<br />mascota
+              {title.map((line, i) => <Fragment key={i}>{i > 0 && <br />}{line}</Fragment>)}
             </h1>
 
-            <p className="font-display font-bold text-mk-orange text-2xl sm:text-3xl mb-5">
-              en un solo lugar
-            </p>
+            {content.highlight && (
+              <p className="font-display font-bold text-mk-orange text-2xl sm:text-3xl mb-5">
+                {content.highlight}
+              </p>
+            )}
 
             <p className="font-body text-mk-mid text-base md:text-lg mb-7 max-w-md mx-auto md:mx-0">
-              {offer} para perros y gatos
-              con envío gratis a CABA.
+              {content.description || autoHeroDescription(offer)}
             </p>
 
             {/* CTAs */}
@@ -63,12 +65,12 @@ export function HeroBanner({ offer }: { offer: string }) {
               </a>
             </div>
 
-            {/* TRUST BADGES — Brand Guardian: los 4 obligatorios */}
+            {/* GARANTÍAS */}
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-x-6 gap-y-2
                             justify-center md:justify-start">
-              {TRUST_BADGES.map(badge => (
-                <div key={badge.text} className="trust-badge">
-                  <span aria-hidden="true">{badge.icon}</span>
+              {content.badges.map((badge, i) => (
+                <div key={i} className="trust-badge">
+                  {badge.icon && <span aria-hidden="true">{badge.icon}</span>}
                   <span>{badge.text}</span>
                 </div>
               ))}
@@ -80,10 +82,10 @@ export function HeroBanner({ offer }: { offer: string }) {
           <div className="w-full flex-1 flex justify-center order-1 md:order-2">
             <div className="relative w-full max-w-sm md:max-w-md lg:max-w-lg">
               <Image
-                src="/assets/hero-main.png"
-                alt="Gatos, perros y productos MK-Pets — alimentos, snacks y más"
-                width={600}
-                height={400}
+                src={image.url}
+                alt={content.imageAlt}
+                width={image.width}
+                height={image.height}
                 className="w-full h-auto object-contain drop-shadow-xl"
                 priority
                 sizes="(max-width: 768px) 100vw, 50vw"

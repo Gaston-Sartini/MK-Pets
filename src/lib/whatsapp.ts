@@ -2,6 +2,7 @@ import { logger } from '@/lib/logger'
 import { getBaseUrl, PAYMENT_METHOD_LABEL, type PaymentMethod } from '@/lib/shop'
 import { formatPrice } from '@/lib/utils'
 import { normalizeArgPhone } from '@/lib/phone'
+import { getSetting } from '@/lib/site-settings'
 
 export interface OrderNotificationPayload {
   orderNumber:      string
@@ -227,25 +228,36 @@ export function orderImageUrl(): string | null {
 }
 
 /**
- * Aviso a quien atiende la tienda (OWNER_WHATSAPP). Para lo que el dueño tiene que
+ * Número que recibe los avisos de la tienda. Se cambia desde el panel (Admin →
+ * WhatsApp); si nunca se cambió, vale OWNER_WHATSAPP de Netlify.
+ */
+export async function getOwnerNumber(): Promise<string | null> {
+  const saved = await getSetting('owner_whatsapp')
+  const number = typeof saved === 'object' && saved && 'number' in saved ? String((saved as { number: unknown }).number) : ''
+  return number || process.env.OWNER_WHATSAPP || null
+}
+
+/**
+ * Aviso a quien atiende la tienda (ver getOwnerNumber). Para lo que el dueño tiene que
  * saber sin abrir el panel: el cliente cambió o canceló su pedido, queda poco stock.
  * Nunca frena la operación que lo dispara: si falla, se registra y se sigue.
  */
 export async function notifyOwner(text: string, context: Record<string, unknown> = {}): Promise<boolean> {
-  const owner = process.env.OWNER_WHATSAPP
-  if (!owner || !isWhatsAppConfigured()) return false
+  if (!isWhatsAppConfigured()) return false
+  const owner = await getOwnerNumber()
+  if (!owner) return false
   return sendWhatsApp(owner, text, { ...context, to: 'owner' }).catch(() => false)
 }
 
 /**
- * Avisos de un pedido nuevo: al cliente y, si está configurado OWNER_WHATSAPP,
+ * Avisos de un pedido nuevo: al cliente y, si hay número de la tienda (getOwnerNumber),
  * a quien atiende la tienda.
  */
 export async function notifyOrderWhatsApp(payload: OrderNotificationPayload): Promise<boolean> {
   if (!isWhatsAppConfigured()) return false
 
   const context = { orderNumber: payload.orderNumber }
-  const owner   = process.env.OWNER_WHATSAPP
+  const owner   = await getOwnerNumber()
   // El aviso al dueño va una sola vez por pedido: no se repite cuando MP confirma el pago.
   const notifyOwner = owner && !(payload.paymentMethod === 'MERCADOPAGO' && payload.isPendingPayment === false)
 

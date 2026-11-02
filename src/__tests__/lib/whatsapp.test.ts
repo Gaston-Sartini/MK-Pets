@@ -78,3 +78,29 @@ describe('WhatsApp (Evolution API)', () => {
     expect(manualWhatsAppLink('11 5555-0000', 'Hola ¿todo bien?')).toBe('https://wa.me/5491155550000?text=Hola%20%C2%BFtodo%20bien%3F')
   })
 })
+
+describe('Número que recibe los avisos de la tienda', () => {
+  it('sin número guardado en el panel, usa OWNER_WHATSAPP', async () => {
+    const { prisma } = await import('@/lib/prisma')
+    ;(prisma as any).$queryRaw = vi.fn().mockResolvedValueOnce([])
+    process.env.OWNER_WHATSAPP = '5491100000001'
+    const { getOwnerNumber } = await import('@/lib/whatsapp')
+    expect(await getOwnerNumber()).toBe('5491100000001')
+  })
+
+  it('el número guardado en el panel tiene prioridad', async () => {
+    const { prisma } = await import('@/lib/prisma')
+    ;(prisma as any).$queryRaw = vi.fn().mockResolvedValueOnce([{ value: { number: '5491122223333' } }])
+    process.env.OWNER_WHATSAPP = '5491100000001'
+    const { getOwnerNumber } = await import('@/lib/whatsapp')
+    expect(await getOwnerNumber()).toBe('5491122223333')
+  })
+
+  it('si la base no responde, usa OWNER_WHATSAPP', async () => {
+    const { prisma } = await import('@/lib/prisma')
+    ;(prisma as any).$queryRaw = vi.fn().mockRejectedValueOnce(new Error('sin conexión'))
+    process.env.OWNER_WHATSAPP = '5491100000001'
+    const { getOwnerNumber } = await import('@/lib/whatsapp')
+    expect(await getOwnerNumber()).toBe('5491100000001')
+  })
+})
