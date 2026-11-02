@@ -13,6 +13,7 @@ import {
   getCategories,
 } from '@/lib/queries'
 import { SITE_URL, describeCatalog, describeCatalogTitle } from '@/lib/shop'
+import { getHeroContent } from '@/lib/site-settings'
 
 // Cache home page for 5 minutes — balances freshness vs. DB load
 export const revalidate = 300
@@ -61,7 +62,7 @@ const MAX_HOME_SECTIONS = 4
 
 export default async function HomePage() {
   // Load categories first — they drive which sections to render.
-  const categories = await getCategories().catch(() => [])
+  const [categories, hero] = await Promise.all([getCategories().catch(() => []), getHeroContent()])
   const sectionCats = categories.slice(0, MAX_HOME_SECTIONS)
 
   let featured: Awaited<ReturnType<typeof getFeaturedProducts>> = []
@@ -84,7 +85,7 @@ export default async function HomePage() {
   return (
     <>
       <JsonLd data={websiteSchema} />
-      <HeroBanner offer={describeCatalogTitle(categories.map(c => c.name))} />
+      <HeroBanner offer={describeCatalogTitle(categories.map(c => c.name))} content={hero} />
 
       {/* CATEGORÍAS */}
       <section aria-label="Categorías" className="max-w-[1280px] mx-auto px-4 md:px-6 lg:px-8 py-6">

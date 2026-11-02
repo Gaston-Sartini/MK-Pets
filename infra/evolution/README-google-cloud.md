@@ -61,7 +61,24 @@ En Netlify están cargadas `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` y
 Hace falta si WhatsApp cierra la sesión (el teléfono pasó ~14 días sin
 conexión, o se cerró desde "Dispositivos vinculados") o para cambiar de número.
 
-1. Borrar la instancia y crear una limpia. En PowerShell, desde `D:\MK-Pets`:
+**Desde el panel (lo normal):** Admin → **WhatsApp** → "Desvincular el actual y
+vincular otro". Hay dos formas:
+
+- **Con QR**, si el panel está abierto en otra pantalla (la compu): en el
+  teléfono nuevo, WhatsApp → Dispositivos vinculados → Vincular un dispositivo,
+  y se apunta al QR. Se renueva solo cada 30 segundos.
+- **Con código**, si el panel está abierto en el mismo celular que se va a
+  vincular: se escribe el número, el panel da un código de 8 letras y en
+  WhatsApp → Dispositivos vinculados → Vincular un dispositivo → "Vincular con el
+  número de teléfono" se lo escribe.
+
+En la misma página se cambia el número que recibe los avisos de la tienda. Si
+es el mismo que envía, WhatsApp no avisa de esos mensajes (quedan en el chat
+"Tú"): conviene que sea otro.
+
+**Desde la PC (si el panel no anda).** En PowerShell, desde `D:\MK-Pets`:
+
+1. Borrar la instancia y crear una limpia:
 
    ```powershell
    $env:EVOLUTION_API_URL="https://35-254-138-207.sslip.io"; node --env-file=infra/evolution/.env infra/evolution/reset-instance.mjs

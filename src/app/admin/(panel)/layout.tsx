@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { LayoutDashboard, Package, Percent, ShoppingCart, Tag, Store, UserCog } from 'lucide-react'
+import { Image as ImageIcon, LayoutDashboard, MessageCircle, Package, Percent, ShoppingCart, Tag, Store, UserCog } from 'lucide-react'
 import { LogoutButton } from '@/components/admin/LogoutButton'
 
 const NAV = [
@@ -8,6 +8,8 @@ const NAV = [
   { href: '/admin/productos',  label: 'Productos',   icon: Package },
   { href: '/admin/precios',    label: 'Precios',     icon: Percent },
   { href: '/admin/categorias', label: 'Categorías',  icon: Tag },
+  { href: '/admin/portada',    label: 'Portada',     icon: ImageIcon },
+  { href: '/admin/whatsapp',   label: 'WhatsApp',    icon: MessageCircle },
   { href: '/admin/cuenta',     label: 'Mi cuenta',   icon: UserCog },
 ]
 

@@ -139,7 +139,7 @@ export default async function AdminDashboard() {
         <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
           <p className="font-bold">⚠️ WhatsApp no está enviando mensajes</p>
           <p className="mt-1">{whatsapp.detail}. Mientras tanto los clientes no reciben el aviso de su pedido: escribiles vos desde el WhatsApp de la tienda (en Pedidos, al cambiar un estado, te aparece el mensaje listo para mandar).</p>
-          <p className="mt-1">Para arreglarlo, abrí Claude en la carpeta del proyecto y pedile que revise WhatsApp.</p>
+          <p className="mt-1">Mirá el estado en <Link href="/admin/whatsapp" className="font-bold underline">WhatsApp</Link>; si no se arregla, abrí Claude en la carpeta del proyecto y pedile que lo revise.</p>
         </div>
       )}
       {whatsapp?.ok && (
